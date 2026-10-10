@@ -7,7 +7,7 @@
  * As tabelas existentes e os dados financeiros são preservados.
  */
 
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import {
   mkdirSync,
   readFileSync,
@@ -109,14 +109,14 @@ function initializeDatabase(db: DatabaseSync): void {
 // Adaptador utilizado pelas APIs financeiras.
 class Statement {
   private sql: string;
-  private args: any[];
+  private args: SQLInputValue[];
 
-  constructor(sql: string, args: any[] = []) {
+  constructor(sql: string, args: SQLInputValue[] = []) {
     this.sql = sql;
     this.args = args;
   }
 
-  bind(...args: any[]) {
+  bind(...args: SQLInputValue[]) {
     return new Statement(this.sql, args);
   }
 
@@ -175,7 +175,7 @@ const BUCKET = {
   async put(
     key: string,
     bytes: Uint8Array,
-    opts: any
+    opts: {httpMetadata?: {contentType?: string}; customMetadata?: Record<string,string>}
   ) {
     if (!validKey(key)) {
       throw new Error(

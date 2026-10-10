@@ -58,3 +58,6 @@ next-env.d.ts
 /data/
 .env
 .env.local
+
+*.tsbuildinfo
+!.env.example

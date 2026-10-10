@@ -1,38 +1,43 @@
-﻿# Ouro — Gestão Financeira
+# Ouro Certo V13
 
-Aplicação inicial baseada no documento de requisitos e na referência visual fornecidos em 10/10/2026.
+Sistema de gestão financeira com Next.js, Node.js e SQLite persistente. Registra operações; não executa transferências bancárias reais.
 
-## Uso
+## Novidades da V13
 
-1. Entrar individualmente com ChatGPT no site privado.
-2. Em Bancos, editar os saldos e datas iniciais antes de criar movimentações.
-3. Conferir as sete unidades em Configurações, cadastrar funcionários e despesas.
-4. Informar gramas na competência e conferir a remuneração antes do pagamento.
-5. Conferir diariamente os saldos reais e gerar os PDFs desejados.
+- Onze relatórios PDF em A4, preto, dourado e branco, com marca, cabeçalhos, tabelas, totais, quebra de linhas e páginas numeradas.
+- PDFs dos caixas com saldo inicial do período, entradas, saídas e saldo esperado. O botão PDF no caixa usa a conta e o dia selecionados, mesmo sem fechamento. Os relatórios de fechamento incluem saldo real, diferença, responsável e justificativa quando registrados.
+- Tela Contas Pagas com despesas, contas, salários e vales. É uma consulta das saídas já existentes, sem uma segunda tabela de pagamentos.
+- Vale pago gera uma única saída no Caixa de Pagamentos e reduz o saldo salarial da competência. Cancelar pela tela de vales ou pelo caixa estorna ambos os vínculos e retira o pagamento dos totais ativos.
+- Comissão padrão preservada em R$ 10,00 por grama, com até três casas decimais de produção. As folhas anteriores mantêm a taxa histórica. Taxas futuras continuam configuráveis, conforme a V12.
+- Bloqueio imediato de submissões simultâneas no navegador. No servidor, requestId identifica repetições e a revisão impede gravações concorrentes sobre estado antigo.
 
-O botão Ver demonstração carrega exemplos apenas na memória do navegador. Não grava registros reais. Os dados financeiros reais iniciam zerados.
+## Executar localmente
 
-## Implementado
+Requer Node.js 22.13 ou superior (CI configurada com Node.js 24).
 
-- Nove módulos, filtros de competência/unidade, interface responsiva preta e dourada.
-- Dois caixas, novas contas, despesas com unidade obrigatória e transferências sem custo.
-- Contas recorrentes, pagamentos parciais, cancelamentos, categorias editáveis.
-- Funcionários, comissões por grama com taxa histórica, vales e pagamento salarial.
-- Fechamentos com divergências justificadas e bloqueio de movimentos retroativos.
-- Comprovantes PDF/JPG/PNG de até 5 MB no armazenamento R2.
-- Relatórios PDF paginados e exportação JSON de backup.
-- Autorização de administradores no servidor, auditoria por revisões imutáveis e escrita atômica com controle de concorrência e idempotência.
+1. Execute `npm ci` na raiz do projeto.
+2. Copie `.env.example` para `.env.local`. Preencha `BOOTSTRAP_SECRET` com um segredo próprio e mantenha `APP_URL=http://localhost:3000` para desenvolvimento.
+3. Execute `npm run dev` e acesse `/login` para criar o primeiro administrador.
+4. Em Bancos, configure a data e o saldo inicial de cada conta antes das movimentações. Cadastre funcionários, unidades e categorias; depois registre contas, vales e produção.
 
-## Arquitetura e diferenças do documento
+Para validar: `npm test`, `npm run lint` e `npm run build`. Para executar a versão compilada: `npm start`. Em produção, configure uma URL HTTPS e o armazenamento persistente, conforme README_RAILWAY.md.
 
-A hospedagem Sites utiliza Vinext (compatível com convenções Next.js), D1/SQLite e R2. A identidade é individual via ChatGPT, não login/senha próprios do Supabase. O site permanece privado do proprietário; o cadastro de outro administrador não altera a política de acesso da hospedagem.
+## Publicar no GitHub e Railway
 
-A persistência inicial mantém o estado financeiro completo em revisões imutáveis numa tabela relacional. Antes de ampliar o uso e o volume de dados, recomenda-se normalizar as entidades em tabelas próprias e realizar homologação com as rotinas reais da empresa. O histórico contém os estados anterior e posterior e permite reconstrução, mas ainda não há agendamento de backup externo ou restauração pela interface. A exportação é manual. Alterações em salários e vínculos de funcionário valem para futuras competências; não recalculam folhas existentes automaticamente.
+Extraia o ZIP e publique **o conteúdo da pasta Ouro_Certo_V13 na raiz do repositório**, incluindo `.github`, `.gitignore` e `.env.example`. Não publique a pasta externa como um nível extra. O workflow do GitHub executa instalação, testes, lint e build.
+
+O GitHub armazena o código. A aplicação com login, SQLite e APIs deve ser hospedada em um serviço Node.js, como Railway; GitHub Pages não executa este servidor.
+
+## Dados e atualização da V12
+
+Não há mudança de esquema nem migração destrutiva. Mantenha o mesmo volume `DATA_DIR` e faça backup do arquivo SQLite e da pasta uploads antes de substituir o código. A V13 usa os lançamentos e vínculos de vales da V12; não cria saídas retroativas adicionais. Não altere o saldo inicial de contas com histórico.
+
+Contas Pagas e PDFs financeiros desconsideram cancelamentos; os registros originais e a auditoria permanecem disponíveis. Os filtros de unidade e categoria se aplicam a custos e pagamentos. Saldos de caixa são centralizados e os PDFs de caixa mostram todos os movimentos da conta, evitando conciliações com filtros incompletos. Transferências são entradas/saídas por conta, mas não custos operacionais.
+
+Contas a Pagar mostra o saldo pendente na emissão. Custos mostram obrigações previstas na competência e valores pagos acumulados; Contas Pagas mostra saídas na data do pagamento. Salários e Comissões considera as competências que cruzam o intervalo selecionado. O saldo inicial dos PDFs inclui o saldo cadastrado e movimentos anteriores ao período; saldo esperado = inicial + entradas - saídas.
 
 ## Verificação
 
-`node --test app/engine.test.mjs` cobre precisão, atribuição de custos, vales, comissões, ausência versus zero, pagamento parcial, reversão, transferências, fechamentos e recorrência idempotente.
+Veja RELATORIO_TESTES_V13.md. A entrega exclui node_modules, build, bancos, comprovantes reais, arquivos de ambiente com segredos e dados usados nos testes.
 
-`npm run db:generate` gera migrações; `npm run build` compila; `npm run dev` inicia a prévia.
-
-Valores são armazenados em centavos inteiros; gramas em miligramas. Nenhuma integração bancária ou com ERP está incluída. Os saldos dependem dos lançamentos e da conferência informada pelo administrador.
+Documentos de versões anteriores são referências históricas. Para instalar e publicar a V13, siga este README e README_RAILWAY.md.

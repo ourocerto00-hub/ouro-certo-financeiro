@@ -11,6 +11,16 @@ export function initial(email=''){
  return {units:['Matriz','Sorriso','Nova Mutum','Campo Novo dos Parecis','Tangará da Serra','Vilhena','Cacoal'].map((name,i)=>({id:'u'+i,name,city:i?name:'Sede',state:i>4?'RO':'MT',type:i?'Filial':'Matriz',active:true})),categories:['Aluguel','Energia','Internet','Marketing','Combustível','Manutenção','Despesas administrativas','Salários'].map((name,i)=>({id:'c'+i,name,active:true})),accounts:[{id:'gold',name:'Nubank — Ouro Certo',purpose:'gold',opening:0,date:today()},{id:'pay',name:'Nubank — Ouro Passo',purpose:'pay',opening:0,date:today()}],employees:[],bills:[],movements:[],advances:[],payroll:[],closings:[],rates:[{month:'2000-01',value:1000}],users:email?[{id:id(),name:email,email,active:true}]:[]};
 }
 export const active=x=>!x.cancelled;
+// Contas Pagas is a view of the ledger, never a second payment table.
+export const paidMovements=s=>s.movements.filter(m=>active(m)&&m.amount<0&&['expense','bill','advance','salary'].includes(m.kind));
+export function cashSummary(s,account,from,to=from){
+ if(from>to)throw Error('Período inválido.');
+ const a=s.accounts.find(x=>x.id===account);if(!a)throw Error('Conta não encontrada.');
+ const opening=(a.date<=to?a.opening:0)+s.movements.filter(m=>m.account===account&&m.date<from&&active(m)).reduce((n,m)=>n+m.amount,0);
+ const ms=s.movements.filter(m=>m.account===account&&m.date>=from&&m.date<=to&&active(m));
+ const entries=ms.reduce((n,m)=>n+Math.max(0,m.amount),0),exits=ms.reduce((n,m)=>n-Math.min(0,m.amount),0);
+ return {opening,entries,exits,expected:opening+entries-exits};
+}
 export const balance=(s,account,until='9999-12-31')=>{const a=s.accounts.find(x=>x.id===account);return (a&&a.date<=until?a.opening:0)+s.movements.filter(x=>x.account===account&&x.date<=until&&active(x)).reduce((n,x)=>n+x.amount,0);};
 export const billPaid=(s,b)=>s.movements.filter(x=>x.bill===b.id&&active(x)).reduce((n,x)=>n-x.amount,0);
 export const advancePaid=(s,p)=>s.advances.filter(x=>x.employee===p.employee&&x.month===p.month&&active(x)).reduce((n,x)=>n+x.amount,0);
@@ -24,7 +34,7 @@ export function summary(s,month,unit='all'){
  const daily=s.movements.filter(x=>active(x)&&x.kind==='expense'&&x.date.startsWith(month)&&filter(x));
  const total=bs.reduce((n,b)=>n+b.amount,0)+ps.reduce((n,p)=>n+remuneration(p),0)+daily.reduce((n,m)=>n-m.amount,0);
  const pending=bs.reduce((n,b)=>n+Math.max(0,b.amount-billPaid(s,b)),0)+ps.reduce((n,p)=>n+salaryDue(s,p),0);
- const paid=s.movements.filter(x=>active(x)&&['expense','bill','advance','salary'].includes(x.kind)&&x.date.startsWith(month)&&filter(x)).reduce((n,m)=>n-m.amount,0);
+ const paid=paidMovements(s).filter(x=>x.date.startsWith(month)&&filter(x)).reduce((n,m)=>n-m.amount,0);
  const advances=s.advances.filter(x=>active(x)&&x.date.startsWith(month)&&filter(x)).reduce((n,x)=>n+x.amount,0);
  return {total,pending,paid,advances,gold:s.accounts.filter(x=>x.purpose==='gold').reduce((n,a)=>n+balance(s,a.id),0),pay:s.accounts.filter(x=>x.purpose==='pay').reduce((n,a)=>n+balance(s,a.id),0)};
 }

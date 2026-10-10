@@ -1,18 +1,13 @@
-# Ouro Certo V8 — Railway (Node.js + SQLite persistente)
+# Publicação da V13 no Railway
 
-Esta variante substitui a execução Cloudflare Workers por Next.js em Node.js, troca D1 por SQLite local persistente e R2 por arquivos em disco persistente. O site é um SISTEMA DE REGISTRO FINANCEIRO, não movimenta dinheiro real.
+1. Publique o conteúdo de Ouro_Certo_V13 na raiz de um repositório GitHub e conecte esse repositório ao Railway.
+2. Use um serviço Node.js com uma réplica. Crie um volume persistente e monte-o em `/data` antes de usar o sistema.
+3. Configure `DATA_DIR=/data`, `APP_URL=https://seu-dominio-publico` e `BOOTSTRAP_SECRET` com um segredo próprio. A origem configurada deve corresponder à URL acessada pelo usuário. Railway fornece PORT automaticamente; na ausência de APP_URL, o servidor usa RAILWAY_PUBLIC_DOMAIN quando disponível.
+4. Instalação/build: `npm ci && npm run build`. Inicialização: `npm start`. O script start respeita PORT e funciona também no Windows.
+5. Acesse `/login`, selecione o primeiro acesso e crie o administrador com o segredo configurado. Os próximos usuários são cadastrados em Configurações.
+6. Para atualizar uma V12 existente, preserve o volume, DATA_DIR e usuários. Não repita a criação do administrador. Faça backup do banco e dos uploads antes do deploy.
+7. Confira um vale, o saldo do caixa, Contas Pagas, a comissão e um PDF; reinicie o serviço e confirme a persistência dos dados.
 
-## Deploy Railway
-1. Publique o conteúdo da pasta `financeiro` como diretório-raiz do serviço (ou configure Root Directory = `financeiro`).
-2. Crie um **Railway Volume** e monte em `/data` ANTES do primeiro lançamento. Sem o volume, dados e comprovantes podem desaparecer após redeploy.
-3. Defina `DATA_DIR=/data` e `BOOTSTRAP_SECRET` forte e novo nas variáveis do serviço. Nunca use a chave antiga compartilhada no chat. Não coloque segredo nos arquivos do projeto.
-4. Defina `PORT` pelo Railway (ele fornece automaticamente). Instale/compile com `npm ci && npm run build`, inicie com `npm run start`.
-5. Acesse `/login`, escolha configuração inicial e crie o primeiro administrador. Depois crie usuários financeiros no painel.
-6. Teste login, logout, permissões, registros, comprovantes, backups e persistência após reiniciar antes do uso real.
+O volume contém `ouro-certo.sqlite` e `uploads`. Faça backups externos periódicos; uma cópia consistente de SQLite em modo WAL deve incluir o estado atual do banco (use backup SQLite ou pare o serviço antes de copiar os arquivos). O ZIP não contém banco ou segredos. Não use múltiplas réplicas compartilhando o arquivo SQLite.
 
-## Observações
-- Não migra automaticamente o banco D1 local ou remoto existente. Dados pré-existentes requerem migração específica.
-- A opção de usar arquivo SQLite é adequada para um único serviço Railway com volume persistente e **uma réplica**; não use múltiplas réplicas compartilhando esse arquivo.
-- Faça backups externos periódicos do volume, incluindo `ouro-certo.sqlite` e a pasta `uploads`.
-- O import original `cloudflare:workers` foi substituído por `server/runtime.ts`, que fornece uma interface compatível apenas com as operações usadas neste projeto.
-- Testes de implantação com volume/URL Railway requerem configuração no próprio Railway.
+A validação local não publica o serviço no Railway nem no GitHub. O workflow incluído valida o código em cada push e pull request.
