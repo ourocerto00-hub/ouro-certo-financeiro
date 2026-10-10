@@ -32,12 +32,12 @@ O GitHub armazena o código. A aplicação com login, SQLite e APIs deve ser hos
 
 Não há mudança de esquema nem migração destrutiva. Mantenha o mesmo volume `DATA_DIR` e faça backup do arquivo SQLite e da pasta uploads antes de substituir o código. A V13 usa os lançamentos e vínculos de vales da V12; não cria saídas retroativas adicionais. Não altere o saldo inicial de contas com histórico.
 
-Contas Pagas e PDFs financeiros desconsideram cancelamentos; os registros originais e a auditoria permanecem disponíveis. Os filtros de unidade e categoria se aplicam a custos e pagamentos. Saldos de caixa são centralizados e os PDFs de caixa mostram todos os movimentos da conta, evitando conciliações com filtros incompletos. Transferências são entradas/saídas por conta, mas não custos operacionais.
+Contas Pagas e totais financeiros desconsideram cancelamentos; o PDF de Contas a Pagar mantém as contas canceladas visíveis, com sua situação e valor cancelado separados; os registros originais e a auditoria permanecem disponíveis. Os filtros de unidade e categoria se aplicam a custos e pagamentos. Saldos de caixa são centralizados e os PDFs de caixa mostram todos os movimentos da conta, evitando conciliações com filtros incompletos. Transferências são entradas/saídas por conta, mas não custos operacionais.
 
-Contas a Pagar mostra o saldo pendente na emissão. Custos mostram obrigações previstas na competência e valores pagos acumulados; Contas Pagas mostra saídas na data do pagamento. Salários e Comissões considera as competências que cruzam o intervalo selecionado. O saldo inicial dos PDFs inclui o saldo cadastrado e movimentos anteriores ao período; saldo esperado = inicial + entradas - saídas.
+Contas a Pagar e seu PDF usam a mesma seleção de contas por período, unidade, categoria e busca, incluindo contas pagas e canceladas. Os totais de contas ativas, pago, saldo pendente e valor cancelado são apresentados separadamente. Salários permanecem na tabela própria e no relatório Salários e Comissões. Custos mostram obrigações previstas na competência e valores pagos acumulados; Contas Pagas mostra saídas na data do pagamento. Salários e Comissões considera as competências que cruzam o intervalo selecionado. O saldo inicial dos PDFs inclui o saldo cadastrado e movimentos anteriores ao período; saldo esperado = inicial + entradas - saídas.
 
 ## Verificação
 
-Veja RELATORIO_TESTES_V13.md. A entrega exclui node_modules, build, bancos, comprovantes reais, arquivos de ambiente com segredos e dados usados nos testes.
+Veja RELATORIO_TESTES_V13.md e CORRECAO_PDF_CONTAS_A_PAGAR.md (correção e regressão do PDF de contas). A entrega exclui node_modules, build, bancos, comprovantes reais, arquivos de ambiente com segredos e dados usados nos testes.
 
 Documentos de versões anteriores são referências históricas. Para instalar e publicar a V13, siga este README e README_RAILWAY.md.

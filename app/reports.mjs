@@ -1,10 +1,10 @@
 import {active,balance,billPaid,salaryDue,remuneration,advancePaid,salaryPaid,money,paidMovements,cashSummary} from './engine.mjs';
+import {reportPeriod,selectBills,billTotals,billStatus} from './bills-view.mjs';
 export const REPORTS=['Contas a Pagar','Contas Pagas','Fechamento Caixa Ouro','Fechamento Caixa Pagamentos','Vales e Adiantamentos','Custos por Filial','Custos da Matriz','Salários e Comissões','Despesas Diárias por Unidade','Resumo Financeiro Geral','Fechamentos Consolidados'];
 const fmt=d=>d.split('-').reverse().join('/');
-export function createReport(s,index,{month,from='',to='',unit='all',category='all',account='',user='',isDemo=false,issuedAt=new Date()}={}){
+export function createReport(s,index,{month,from='',to='',unit='all',category='all',search='',account='',user='',isDemo=false,issuedAt=new Date()}={}){
  if(!REPORTS[index])throw Error('Relatório inválido.');
- const start=from||month+'-01',end=to||new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5)),0)).toISOString().slice(0,10);
- if(!/^\d{4}-\d{2}-\d{2}$/.test(start)||!/^\d{4}-\d{2}-\d{2}$/.test(end)||start>end)throw Error('Informe um período válido; a data inicial deve ser anterior à final.');
+ const {start,end}=reportPeriod({month,from,to});
  const name=(table,id)=>s[table].find(x=>x.id===id)?.name||'Sem vínculo';
  const range=d=>d>=start&&d<=end;
  const payRange=p=>p.month>=start.slice(0,7)&&p.month<=end.slice(0,7);
@@ -22,10 +22,15 @@ export function createReport(s,index,{month,from='',to='',unit='all',category='a
    add('Conferências / '+a.name,['Data / status','Esperado / real','Diferença','Justificativa'],s.closings.filter(c=>c.account===a.id&&range(c.date)).map(c=>[fmt(c.date)+(c.reopened?' / Reaberto':' / Fechado'),`${money(c.expected)} / ${money(c.real)}`,money(c.difference),`${c.reason||'Sem divergência'}${c.reopened?' / '+c.reopenReason:''} / ${c.actor}`]),[1.1,1.5,1,2.4]);
   });
  }else if(index===0){
-  const rows=s.bills.filter(b=>range(b.date)&&filter(b)&&billPaid(s,b)<b.amount).map(b=>[fmt(b.date),b.name,name('units',b.unit),money(b.amount-billPaid(s,b))]);
-  let total=s.bills.filter(b=>range(b.date)&&filter(b)).reduce((n,b)=>n+Math.max(0,b.amount-billPaid(s,b)),0);
-  s.payroll.filter(p=>payRange(p)&&(unit==='all'||p.unit===unit)&&category==='all'&&salaryDue(s,p)>0).forEach(p=>{rows.push([p.month,'Salário / '+name('employees',p.employee),name('units',p.unit),money(salaryDue(s,p))]);total+=salaryDue(s,p);});
-  add('Obrigações pendentes na emissão',['Vencimento','Descrição','Unidade','Pendente'],rows,[1,2.3,1.5,1.2],total);
+  const bills=selectBills(s,{month,from,to,unit,category,search}),totals=billTotals(s,bills);
+  report.note=(isDemo?'DEMONSTRAÇÃO - DADOS FICTÍCIOS. ':'')+'Mesmas contas da tabela. Canceladas constam no histórico, sem compor valores devidos.';
+  if(search.trim())report.scope+=' | Busca: '+search.trim();
+  report.stats=[['Valor das contas',totals.amount],['Total pago',totals.paid],['Saldo pendente',totals.pending],['Valor cancelado',totals.cancelled]].map(([label,value])=>({label,value:money(value)}));
+  const rows=bills.map(b=>{
+   const paid=billPaid(s,b),description=[b.name,b.description&&b.description!==b.name?b.description:'',name('units',b.unit)].filter(Boolean).join(' / ');
+   return [fmt(b.date),description,name('categories',b.category),money(b.amount),`${money(paid)} / ${money(active(b)?Math.max(0,b.amount-paid):0)}`,billStatus(s,b,issuedAt.toLocaleDateString('en-CA',{timeZone:'America/Cuiaba'}))];
+  });
+  add('Contas exibidas / '+bills.length+' registro(s)',['Vencimento','Descrição / unidade','Categoria','Valor','Pago / saldo','Situação'],rows,[1.2,1.9,1.2,1.1,1.3,1.3],totals.amount);
  }else if(index===1||index===8){
   const ms=paidMovements(s).filter(m=>range(m.date)&&filter(m)&&(index!==8||m.kind==='expense'));
   add(index===1?'Pagamentos realizados (um registro por saída)':'Despesas diárias',['Data','Descrição / funcionário','Unidade','Pago'],ms.map(m=>[fmt(m.date),`${m.kind==='advance'?'Vale / ':''}${m.description}${m.employee?' / '+name('employees',m.employee):''}`,name('units',m.unit),money(-m.amount)]),[.9,2.6,1.4,1.1],ms.reduce((n,m)=>n-m.amount,0));

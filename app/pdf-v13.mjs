@@ -13,7 +13,12 @@ export function wrapText(value,max,size=9){
  lines.push(line);return lines;
 }
 export function buildPDF(title,report){
- const pages=[];let commands=[],y=0;
+ // The old public entry point accepted lines; silently treating that array as
+ // a structured report used to create a PDF with only a header and a footer.
+ if(Array.isArray(report))report={sections:[{title:'Registros',columns:['Descrição'],rows:report.map(line=>[line])}]};
+ if(!report||!Array.isArray(report.sections))throw Error('Conteúdo do relatório inválido. Gere novamente o relatório.');
+ if(!report.sections.length)report={...report,sections:[{title:'Registros',columns:['Descrição'],rows:[]}]};
+ const pages=[];let commands=[],y=0,pageBodyTop=0;
  const text=(s,x,top,size=9,color=BLACK,bold=false)=>commands.push(`BT /${bold?'F2':'F1'} ${size} Tf ${color} rg 1 0 0 1 ${x} ${top} Tm (${escape(s)}) Tj ET`);
  const rect=(x,top,w,h,color)=>commands.push(`${color} rg ${x} ${top-h} ${w} ${h} re f`);
  const line=(x,top,w,color=GOLD)=>commands.push(`${color} RG 0.5 w ${x} ${top} m ${x+w} ${top} l S`);
@@ -23,7 +28,7 @@ export function buildPDF(title,report){
   text('OURO CERTO',50,792,16,'1 1 1',true);text('GESTÃO FINANCEIRA / V13',50,773,8,'0.85 0.72 0.43');
   wrapText(title,510,19).slice(0,2).forEach((t,i)=>text(t,36,744-i*23,19,'1 1 1',true));y=687;
   for(const item of [report.subtitle,report.scope,report.issued,report.note].filter(Boolean))for(const t of wrapText(item,523,8)){text(t,36,y,8,GRAY);y-=12;}
-  y-=12;
+  y-=12;pageBodyTop=y;
  };
  const room=h=>{if(y-h<62)newPage();};
  newPage();
@@ -33,15 +38,22 @@ export function buildPDF(title,report){
   }
  }
  for(const section of report.sections||[]){
-  const titleLines=wrapText(section.title,523,12);room(62+titleLines.length*17);for(const t of titleLines){text(t,36,y,12,BLACK,true);y-=17;}y-=4;
   const cols=section.columns||['Descrição'],weights=section.widths||cols.map(()=>1),sum=weights.reduce((a,b)=>a+b,0),widths=weights.map(w=>523*w/sum);
-  const header=()=>{room(28);rect(36,y,523,24,BLACK);let x=36;cols.forEach((c,i)=>{text(c,x+7,y-16,8,'1 1 1',true);x+=widths[i];});y-=24;};header();
-  const continuation=()=>{newPage();for(const t of wrapText(section.title+' (continuação)',523,11)){text(t,36,y,11,BLACK,true);y-=17;}y-=4;header();};
-  const rows=section.rows?.length?section.rows:[['Nenhum registro no período.']];
+  const headerCells=cols.map((c,i)=>wrapText(c,widths[i]-14,8)),headerHeight=Math.max(...headerCells.map(c=>c.length))*11+13;
+  const titleLines=wrapText(section.title,523,12);room(25+headerHeight+titleLines.length*17+4);for(const t of titleLines){text(t,36,y,12,BLACK,true);y-=17;}y-=4;
+  const header=()=>{room(headerHeight+25);rect(36,y,523,headerHeight,BLACK);let x=36;headerCells.forEach((cell,i)=>{cell.forEach((c,j)=>text(c,x+7,y-15-j*11,8,'1 1 1',true));x+=widths[i];});y-=headerHeight;};header();
+  const continuationLines=wrapText(section.title+' (continuação)',523,11);
+  const continuation=()=>{newPage();for(const t of continuationLines){text(t,36,y,11,BLACK,true);y-=17;}y-=4;header();};
+  const rows=section.rows||[];
+  if(!rows.length){room(30);rect(36,y,523,28,'0.97 0.97 0.97');text('Nenhuma conta ou registro corresponde aos filtros selecionados.',43,y-18,9,BLACK);y-=28;}
   rows.forEach((row,index)=>{
    const cells=cols.map((_,i)=>wrapText(row[i]??'',widths[i]-14,9)),count=Math.max(...cells.map(c=>c.length));let offset=0;
-   // Keep a subtotal with the last row, rather than orphaning it on a new page.
-   if(index===rows.length-1&&section.total&&count*13+44<450&&y-(count*13+44)<62)continuation();
+   // Keep ordinary rows intact and the final subtotal beside the last row.
+   // Only a row taller than a fresh page is split into continuation fragments.
+   const rowHeight=count*13+12,requiredHeight=rowHeight+(index===rows.length-1&&section.total?32:0);
+   const freshRowSpace=pageBodyTop-continuationLines.length*17-4-headerHeight-62;
+   if(requiredHeight<=freshRowSpace&&y-requiredHeight<62)continuation();
+   else if(rowHeight<=freshRowSpace&&y-rowHeight<62)continuation();
    while(offset<count){
     if(y-25<62)continuation();
     const fit=Math.max(1,Math.floor((y-62-12)/13)),take=Math.min(count-offset,fit),h=take*13+12;
@@ -49,7 +61,7 @@ export function buildPDF(title,report){
     let x=36;cells.forEach((cell,i)=>{cell.slice(offset,offset+take).forEach((t,j)=>text(t,x+7,y-15-j*13,9));x+=widths[i];});y-=h;line(36,y,523,'0.88 0.88 0.88');offset+=take;
    }
   });
-  if(section.total){room(32);rect(36,y,523,27,'0.96 0.93 0.86');text(section.total,44,y-18,10,BLACK,true);y-=27;}y-=24;
+  if(section.total){const totalLines=wrapText(section.total,507,10),height=totalLines.length*14+13;room(height+5);rect(36,y,523,height,'0.96 0.93 0.86');totalLines.forEach((t,i)=>text(t,44,y-18-i*14,10,BLACK,true));y-=height;}y-=24;
  }
  pages.push(commands.join('\n'));
  const objects=['','<< /Type /Catalog /Pages 2 0 R >>','','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'],kids=[];

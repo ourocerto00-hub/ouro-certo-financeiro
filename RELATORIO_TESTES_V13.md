@@ -2,7 +2,7 @@
 
 ## Resultado
 
-- `npm test`: **26 testes aprovados, zero falhas**.
+- `npm test`: **34 testes aprovados, zero falhas**.
 - `npm run build`: **aprovado**, Next.js 16.3.4 / webpack, incluindo TypeScript, geração de páginas e rotas de API.
 - `tsc --noEmit`: **aprovado**.
 - `npm run lint`: **zero erros**, um aviso da rotina de preparação de competências sobre dependências do useEffect, herdada da V12.
@@ -44,3 +44,7 @@ O script reproduzível está em `scripts/test-integration.mjs`. Requer um servid
 Código versionado como 13.0.0; dependências da V12 preservadas no package-lock. Incluídos README atualizado, exemplo de ambiente, instruções de atualização com volume persistente e workflow do GitHub (testes, lint e build).
 
 O ZIP não contém node_modules, .next, SQLite, comprovantes, dados de teste ou arquivos de ambiente com segredos. A entrega prepara o código para publicação; não foi feito deploy nem acesso a um serviço real no GitHub/Railway.
+
+## Correção do PDF de Contas a Pagar
+
+O conjunto atual acrescenta oito testes de regressão e preservação. Veja CORRECAO_PDF_CONTAS_A_PAGAR.md para causa, arquivos alterados e validação específica.
