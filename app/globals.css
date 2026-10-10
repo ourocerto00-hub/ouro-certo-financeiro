@@ -20,3 +20,10 @@
 .login-setup {border:0;background:transparent;color:#d4af65;margin-top:23px;font-size:12px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 .login-footer {display:flex;align-items:center;justify-content:center;gap:7px;border-top:1px solid #333;padding-top:20px;margin-top:25px;color:#888;font-size:11px;line-height:1.5}
 @media (max-width:480px){.login-card{padding:30px 22px}.login-card h1{font-size:25px}}
+
+/* V10: accessible centralized dialogs, scrolling on small viewports */
+.modal-backdrop{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;z-index:9999!important;display:grid!important;place-items:center!important;overflow-y:auto!important;overscroll-behavior:contain;padding:clamp(12px,3vw,28px)!important}
+.modal{position:relative!important;width:min(620px,100%)!important;max-height:calc(100dvh - 30px)!important;margin:auto!important;overflow-y:auto!important;overscroll-behavior:contain}
+.filters>label{flex-wrap:wrap}.filters select[aria-label="Mês"]{width:110px}.filters select[aria-label="Ano"]{width:75px}
+input[type="date"]{cursor:pointer;color-scheme:dark}
+@media(max-width:650px){.modal-backdrop{padding:8px!important}.modal{max-height:calc(100dvh - 16px)!important;width:100%!important}.modal-footer{position:sticky;bottom:-20px;background:#181917;padding:12px 0;z-index:1}}

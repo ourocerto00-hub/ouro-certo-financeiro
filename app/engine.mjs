@@ -29,7 +29,20 @@ export function summary(s,month,unit='all'){
  return {total,pending,paid,advances,gold:s.accounts.filter(x=>x.purpose==='gold').reduce((n,a)=>n+balance(s,a.id),0),pay:s.accounts.filter(x=>x.purpose==='pay').reduce((n,a)=>n+balance(s,a.id),0)};
 }
 function ensurePeriod(s,month){period(month);for(const e of s.employees.filter(x=>x.active&&x.admission.slice(0,7)<=month)){if(!s.payroll.some(p=>p.employee===e.id&&p.month===month)){const rate=[...s.rates].filter(r=>r.month<=month).sort((a,b)=>b.month.localeCompare(a.month))[0]?.value||1000;s.payroll.push({id:id(),employee:e.id,unit:e.unit,month,salary:e.salary,grams:null,rate,confirmed:false,notes:''});}}
- for(const b of [...s.bills].filter(x=>x.recurring&&active(x)&&!x.parent&&x.date.slice(0,7)<month)){if(!s.bills.some(x=>x.parent===b.id&&x.date.startsWith(month))){const day=Math.min(Number(b.date.slice(8)),new Date(Number(month.slice(0,4)),Number(month.slice(5)),0).getDate());s.bills.push({...b,id:id(),parent:b.id,date:month+'-'+String(day).padStart(2,'0'),recurring:false});}}
+ for(const b of [...s.bills].filter(x=>x.recurring&&active(x)&&!x.parent&&x.date.slice(0,7)<month)){
+   const [year,mon]=b.date.slice(0,7).split('-').map(Number);
+   let y=year,m=mon+1;
+   while(y*12+m<=Number(month.slice(0,4))*12+Number(month.slice(5))){
+    if(m>12){m=1;y++;}
+    const periodKey=`${y}-${String(m).padStart(2,'0')}`;
+    if(periodKey>month)break;
+    if(!s.bills.some(x=>x.parent===b.id&&x.date.startsWith(periodKey))){
+     const d=Math.min(Number(b.date.slice(8)),new Date(y,m,0).getDate());
+     s.bills.push({...b,id:id(),parent:b.id,date:periodKey+'-'+String(d).padStart(2,'0'),recurring:false});
+    }
+    m++;
+   }
+  }
 }
 export function apply(source,op,input,actor){
  const s=structuredClone(source),v={...input};

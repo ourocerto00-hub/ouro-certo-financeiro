@@ -22,5 +22,16 @@ export async function createSession(userId:string){
 }
 export async function clearSession(){const cookie=(await cookies()).get(COOKIE)?.value;if(cookie)await env.DB.prepare('DELETE FROM auth_sessions WHERE id=?').bind(cookie).run();(await cookies()).delete(COOKIE);}
 export async function requireRole(role?:string){const u=await currentUser();if(!u)throw Error('AUTH');if(role&&u.role!==role)throw Error('FORBIDDEN');return u;}
-export function checkOrigin(req:Request){const o=req.headers.get('origin');if(o&&o!==new URL(req.url).origin)throw Error('Origem inválida');}
+export function checkOrigin(req:Request){
+ const origin=req.headers.get('origin');
+ if(!origin)throw Error('Origem não informada.');
+ let received:string;
+ try{received=new URL(origin).origin;}catch{throw Error('Origem inválida.');}
+ const environment:NodeJS.ProcessEnv=process.env;
+ const configured=environment['APP_URL'] || (environment['RAILWAY_PUBLIC_DOMAIN']?`https://${environment['RAILWAY_PUBLIC_DOMAIN']}`:undefined);
+ if(!configured)throw Error('APP_URL não configurada no servidor.');
+ let allowed:string;
+ try{const url=new URL(configured);if(process.env.NODE_ENV==='production'&&url.protocol!=='https:')throw Error();allowed=url.origin;}catch{throw Error('APP_URL inválida.');}
+ if(received!==allowed)throw Error('Origem inválida.');
+}
 export function authError(e:any){const msg=String(e?.message||e);return Response.json({error:msg},{status:msg==='AUTH'?401:msg==='FORBIDDEN'?403:400,headers:{'Cache-Control':'no-store'}});}

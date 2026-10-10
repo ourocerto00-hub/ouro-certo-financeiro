@@ -1,6 +1,6 @@
 export const runtime='nodejs';
 import {env} from '../../../server/runtime';
-import {requireRole} from '../../auth';
+import {requireRole,checkOrigin} from '../../auth';
 import {detectAllowedFileType, safeAttachmentName, validObjectKey, MAX_UPLOAD_BYTES} from '../../upload-validation.mjs';
 
 async function authorize(){
@@ -12,17 +12,13 @@ async function authorize(){
   if(!JSON.parse(String(row.state)).users.some((x:{active:boolean,email:string})=>x.active&&x.email.toLowerCase()===u.email.toLowerCase()))throw Error('Acesso negado.');
   return u;
 }
-function requireSameOrigin(req:Request){
-  const origin=req.headers.get('origin');
-  if(origin&&origin!==new URL(req.url).origin)throw Error('Origem inválida.');
-}
 export async function POST(req:Request){
   try{
-    await authorize();requireSameOrigin(req);
+    await authorize();checkOrigin(req);
     const sizeHeader=req.headers.get('content-length');
     if(sizeHeader&&Number(sizeHeader)>MAX_UPLOAD_BYTES+1024*1024)throw Error('Requisição muito grande.');
     const f=(await req.formData()).get('file');
-    if(!f||typeof f.arrayBuffer!=='function'||f.size===0||f.size>MAX_UPLOAD_BYTES)throw Error('Envie um arquivo de até 5 MB.');
+    if(!(f instanceof File)||f.size===0||f.size>MAX_UPLOAD_BYTES)throw Error('Envie um arquivo de até 5 MB.');
     const bytes=new Uint8Array(await f.arrayBuffer());
     const contentType=detectAllowedFileType(bytes);
     if(!contentType||contentType!==f.type)throw Error('Conteúdo do arquivo inválido ou incompatível com o tipo declarado.');
