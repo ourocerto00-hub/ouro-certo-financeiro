@@ -3,6 +3,7 @@ import { env } from '../server/runtime';
 import { cookies } from 'next/headers';
 
 const encoder = new TextEncoder();
+
 const COOKIE = 'ouro_session';
 const SESSION_DURATION = 8 * 60 * 60 * 1000;
 
@@ -35,7 +36,7 @@ export async function hashPassword(
     .join('');
 }
 
-// Compara valores sensíveis sem encerrar na primeira diferença.
+// Comparação segura de valores sensíveis.
 export function same(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
 
@@ -48,7 +49,7 @@ export function same(a: string, b: string): boolean {
   return result === 0;
 }
 
-// Recupera o usuário autenticado com base na sessão.
+// Recupera o usuário autenticado.
 export async function currentUser() {
   const cookie = (await cookies()).get(COOKIE)?.value;
 
@@ -77,7 +78,7 @@ export async function currentUser() {
   };
 }
 
-// Cria uma sessão individual para o usuário.
+// Cria a sessão do usuário.
 export async function createSession(
   userId: string
 ): Promise<void> {
@@ -101,7 +102,7 @@ export async function createSession(
   });
 }
 
-// Encerra a sessão e remove o cookie.
+// Encerra a sessão.
 export async function clearSession(): Promise<void> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE)?.value;
@@ -117,7 +118,7 @@ export async function clearSession(): Promise<void> {
   cookieStore.delete(COOKIE);
 }
 
-// Verifica a autenticação e o perfil do usuário.
+// Verifica autenticação e permissões.
 export async function requireRole(role?: string) {
   const user = await currentUser();
 
@@ -132,7 +133,7 @@ export async function requireRole(role?: string) {
   return user;
 }
 
-// Proteção de origem para Railway e outros proxies.
+// Verificação de origem para Railway.
 export function checkOrigin(req: Request): void {
   const origin = req.headers.get('origin');
 
@@ -148,7 +149,16 @@ export function checkOrigin(req: Request): void {
     throw new Error('Origem inválida.');
   }
 
-  const configuredUrl = process.env.APP_URL;
+  // Lê a variável diretamente do ambiente em execução.
+  const runtimeEnv: NodeJS.ProcessEnv = process.env;
+
+  const configuredUrl =
+    runtimeEnv['APP_URL'] ||
+    (
+      runtimeEnv['RAILWAY_PUBLIC_DOMAIN']
+        ? `https://${runtimeEnv['RAILWAY_PUBLIC_DOMAIN']}`
+        : undefined
+    );
 
   if (!configuredUrl) {
     throw new Error('APP_URL não configurada no servidor.');
@@ -163,7 +173,9 @@ export function checkOrigin(req: Request): void {
       process.env.NODE_ENV === 'production' &&
       url.protocol !== 'https:'
     ) {
-      throw new Error('APP_URL deve utilizar HTTPS em produção.');
+      throw new Error(
+        'APP_URL deve utilizar HTTPS em produção.'
+      );
     }
 
     allowedOrigin = url.origin;
@@ -176,10 +188,12 @@ export function checkOrigin(req: Request): void {
   }
 }
 
-// Respostas padronizadas dos erros de autenticação.
+// Tratamento dos erros de autenticação.
 export function authError(error: unknown): Response {
   const message =
-    error instanceof Error ? error.message : 'Erro inesperado.';
+    error instanceof Error
+      ? error.message
+      : 'Erro inesperado.';
 
   const status =
     message === 'AUTH'
