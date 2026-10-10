@@ -3,7 +3,7 @@ import {env} from '../../../../server/runtime';
 import {hashPassword,checkOrigin,authError,createSession} from '../../../auth';
 export async function POST(req:Request){try{
  checkOrigin(req);
- const {email,name,password,secret}=await req.json();
+ const {email,name,password,secret}=await req.json() as Record<string, any>;
  if(!(env as any).BOOTSTRAP_SECRET||typeof secret!=='string'||secret!==(env as any).BOOTSTRAP_SECRET)throw Error('Configuração de instalação inválida');
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||typeof password!=='string'||password.length<12||password.length>128)throw Error('Informe e-mail e senha de 12 a 128 caracteres');
  const count=await env.DB.prepare('SELECT count(*) AS n FROM auth_users').first();if(Number(count?.n)>0)throw Error('Administrador inicial já criado');

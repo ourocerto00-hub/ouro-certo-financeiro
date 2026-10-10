@@ -17,7 +17,7 @@ export default function LoginForm() {
         body: JSON.stringify({ email, password, ...(setup ? {name,secret} : {}) }),
         credentials:'same-origin', cache:'no-store'
       });
-      const data = await res.json();
+      const data = await res.json() as {error?:string};
       if (!res.ok) throw Error(data.error || 'Não foi possível entrar.');
       window.location.replace('/');
     } catch (err) { setError(err instanceof Error ? err.message : 'Falha de autenticação.'); setBusy(false); }

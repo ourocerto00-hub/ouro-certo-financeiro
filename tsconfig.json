@@ -41,7 +41,10 @@
     "**/*.mts"
   ],
   "exclude": [
+    ".openai",
+    "build",
+    "examples",
     "node_modules",
-    "examples"
+    "vite.config.ts"
   ]
 }

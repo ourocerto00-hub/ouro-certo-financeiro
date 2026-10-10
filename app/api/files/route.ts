@@ -1,5 +1,4 @@
 export const runtime='nodejs';
-// @ts-nocheck
 import {env} from '../../../server/runtime';
 import {requireRole} from '../../auth';
 import {detectAllowedFileType, safeAttachmentName, validObjectKey, MAX_UPLOAD_BYTES} from '../../upload-validation.mjs';
@@ -10,14 +9,14 @@ async function authorize(){
   const row=await env.DB.prepare('SELECT state FROM revisions ORDER BY revision DESC LIMIT 1').first();
   // An uninitialized installation must not make the first uploader an administrator.
   if(!row)throw Error('Sistema ainda não inicializado.');
-  if(!JSON.parse(row.state).users.some(x=>x.active&&x.email.toLowerCase()===u.email.toLowerCase()))throw Error('Acesso negado.');
+  if(!JSON.parse(String(row.state)).users.some((x:{active:boolean,email:string})=>x.active&&x.email.toLowerCase()===u.email.toLowerCase()))throw Error('Acesso negado.');
   return u;
 }
-function requireSameOrigin(req){
+function requireSameOrigin(req:Request){
   const origin=req.headers.get('origin');
   if(origin&&origin!==new URL(req.url).origin)throw Error('Origem inválida.');
 }
-export async function POST(req){
+export async function POST(req:Request){
   try{
     await authorize();requireSameOrigin(req);
     const sizeHeader=req.headers.get('content-length');
@@ -30,13 +29,13 @@ export async function POST(req){
     const key=crypto.randomUUID();const name=safeAttachmentName(f.name);
     await env.BUCKET.put(key,bytes,{httpMetadata:{contentType},customMetadata:{name}});
     return Response.json({key,name},{headers:{'Cache-Control':'no-store'}});
-  }catch(e){return Response.json({error:e.message},{status:400,headers:{'Cache-Control':'no-store'}});}
+  }catch(e){return Response.json({error:e instanceof Error?e.message:'Erro inesperado'},{status:400,headers:{'Cache-Control':'no-store'}});}
 }
-export async function GET(req){
+export async function GET(req:Request){
   try{
     await authorize();
     const key=new URL(req.url).searchParams.get('key');
-    if(!validObjectKey(key))return new Response('Identificador inválido',{status:400});
+    if(!key||!validObjectKey(key))return new Response('Identificador inválido',{status:400});
     const obj=await env.BUCKET.get(key);
     if(!obj)return new Response('Não encontrado',{status:404});
     const name=safeAttachmentName(obj.customMetadata?.name||'comprovante');
