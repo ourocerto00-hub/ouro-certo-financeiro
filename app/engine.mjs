@@ -25,7 +25,11 @@ export const balance=(s,account,until='9999-12-31')=>{const a=s.accounts.find(x=
 export const billPaid=(s,b)=>s.movements.filter(x=>x.bill===b.id&&active(x)).reduce((n,x)=>n-x.amount,0);
 export const advancePaid=(s,p)=>s.advances.filter(x=>x.employee===p.employee&&x.month===p.month&&active(x)).reduce((n,x)=>n+x.amount,0);
 export const salaryPaid=(s,p)=>s.movements.filter(x=>x.payroll===p.id&&x.kind==='salary'&&active(x)).reduce((n,x)=>n-x.amount,0);
-export const remuneration=p=>p.salary+(p.grams===null?0:Math.round(p.grams*p.rate/1000));
+// Registros anteriores à opção de remuneração continuam com comissão habilitada.
+export const compensationType=p=>p.compensationType||'fixed_plus_grams';
+export const earnsCommission=p=>compensationType(p)!=='fixed';
+export const commissionReady=p=>!earnsCommission(p)||p.grams!==null;
+export const remuneration=p=>p.salary+(!earnsCommission(p)||p.grams===null?0:Math.round(p.grams*p.rate/1000));
 export const salaryDue=(s,p)=>Math.max(0,remuneration(p)-advancePaid(s,p)-salaryPaid(s,p));
 export function summary(s,month,unit='all'){
  const filter=x=>unit==='all'||x.unit===unit;
@@ -38,7 +42,7 @@ export function summary(s,month,unit='all'){
  const advances=s.advances.filter(x=>active(x)&&x.date.startsWith(month)&&filter(x)).reduce((n,x)=>n+x.amount,0);
  return {total,pending,paid,advances,gold:s.accounts.filter(x=>x.purpose==='gold').reduce((n,a)=>n+balance(s,a.id),0),pay:s.accounts.filter(x=>x.purpose==='pay').reduce((n,a)=>n+balance(s,a.id),0)};
 }
-function ensurePeriod(s,month){period(month);for(const e of s.employees.filter(x=>x.active&&x.admission.slice(0,7)<=month)){if(!s.payroll.some(p=>p.employee===e.id&&p.month===month)){const rate=[...s.rates].filter(r=>r.month<=month).sort((a,b)=>b.month.localeCompare(a.month))[0]?.value||1000;s.payroll.push({id:id(),employee:e.id,unit:e.unit,month,salary:e.salary,grams:null,rate,confirmed:false,notes:''});}}
+function ensurePeriod(s,month){period(month);for(const e of s.employees.filter(x=>x.active&&x.admission.slice(0,7)<=month)){if(!s.payroll.some(p=>p.employee===e.id&&p.month===month)){const rate=[...s.rates].filter(r=>r.month<=month).sort((a,b)=>b.month.localeCompare(a.month))[0]?.value||1000;s.payroll.push({id:id(),employee:e.id,unit:e.unit,month,salary:e.salary,grams:null,rate,compensationType:compensationType(e),confirmed:false,notes:''});}}
  for(const b of [...s.bills].filter(x=>x.recurring&&active(x)&&!x.parent&&x.date.slice(0,7)<month)){
    const [year,mon]=b.date.slice(0,7).split('-').map(Number);
    let y=year,m=mon+1;
@@ -73,7 +77,18 @@ export function apply(source,op,input,actor){
   const name=text(v.name,'o nome');must(['gold','pay'].includes(v.purpose),'Finalidade inválida.');if(v.id){const a=account(v.id);a.name=name;must(a.purpose===v.purpose||!s.movements.some(m=>m.account===a.id),'Uma conta com histórico não pode mudar de finalidade.');a.purpose=v.purpose;if(v.opening!==undefined){must(!s.movements.some(m=>m.account===a.id)&&!s.closings.some(c=>c.account===a.id),'Saldo inicial só pode ser alterado antes das movimentações.');a.opening=cents(v.opening);a.date=date(v.date);}}else s.accounts.push({id:id(),name,purpose:v.purpose,opening:cents(v.opening),date:date(v.date)});
  }
  else if(op==='employee'){
-  const x=v.id?get('employees',v.id):{id:id()};Object.assign(x,{name:text(v.name,'o nome'),unit:unit(),role:text(v.role,'o cargo'),salary:cents(v.salary),admission:date(v.admission),active:v.active!==false,notes:v.notes||''});if(!v.id)s.employees.push(x);ensurePeriod(s,v.month||today().slice(0,7));
+  const x=v.id?get('employees',v.id):{id:id()};const mode=v.compensationType??compensationType(x);
+  must(['fixed','fixed_plus_grams','grams_only'].includes(mode),'Selecione uma modalidade de remuneração válida.');
+  const salary=mode==='grams_only'?0:cents(v.salary);
+  Object.assign(x,{name:text(v.name,'o nome'),unit:unit(),role:text(v.role,'o cargo'),salary,compensationType:mode,admission:date(v.admission),active:v.active!==false,notes:v.notes||''});
+  if(!v.id)s.employees.push(x);
+  // Apenas competências abertas, do mês atual em diante, acompanham edições.
+  // Folhas conferidas ou já pagas e competências históricas permanecem intactas.
+  for(const p of s.payroll.filter(p=>p.employee===x.id&&p.month>=today().slice(0,7)&&!p.confirmed&&!salaryPaid(s,p))){
+   p.salary=salary;p.compensationType=mode;p.unit=x.unit;
+   if(!earnsCommission(p))p.grams=null;
+  }
+  ensurePeriod(s,v.month||today().slice(0,7));
  }
  else if(op==='bill'){
   const x=v.id?get('bills',v.id):{id:id()};if(v.id){must(!x.cancelled,'Conta cancelada.');must(billPaid(s,x)===0,'Uma conta com pagamentos não pode ser alterada. Cancele os pagamentos antes.');must(v.reason?.trim(),'Justifique a alteração.');}
@@ -90,14 +105,14 @@ export function apply(source,op,input,actor){
   must(v.account!==v.destination,'Selecione duas contas diferentes.');account(v.destination);const amount=positive(v.amount),transfer=id(),description=text(v.description,'a descrição');move({date:date(v.date),account:v.account,amount:-amount,description,kind:'transfer',transfer});move({date:v.date,account:v.destination,amount,description,kind:'transfer',transfer});
  }
  else if(op==='advance'){
-  const e=get('employees',v.employee);must(e.active,'Funcionário inativo.');const month=period(v.month);ensurePeriod(s,month);const p=s.payroll.find(x=>x.employee===e.id&&x.month===month);must(p,'Não há salário para esse período.');const amount=positive(v.amount);account(v.account,'pay');const a={id:id(),employee:e.id,unit:e.unit,date:date(v.date),month,amount,description:text(v.description,'a descrição'),account:v.account,actor,attachment:v.attachment||null};move({account:v.account,amount:-amount,date:a.date,description:a.description,unit:e.unit,employee:e.id,advance:a.id,kind:'advance',attachment:a.attachment});s.advances.push(a);
+  const e=get('employees',v.employee);must(e.active,'Funcionário inativo.');const month=period(v.month);ensurePeriod(s,month);const p=s.payroll.find(x=>x.employee===e.id&&x.month===month);must(p,'Não há salário para esse período.');const amount=positive(v.amount);if(salaryPaid(s,p))must(amount<=salaryDue(s,p),'Vale maior que o saldo salarial restante.');account(v.account,'pay');const a={id:id(),employee:e.id,unit:e.unit,date:date(v.date),month,amount,description:text(v.description,'a descrição'),account:v.account,actor,attachment:v.attachment||null};move({account:v.account,amount:-amount,date:a.date,description:a.description,unit:e.unit,employee:e.id,advance:a.id,kind:'advance',attachment:a.attachment});s.advances.push(a);
  }
  else if(op==='grams'){
-  const p=get('payroll',v.id);must(!p.confirmed,'Reabra a conferência antes de alterar as gramas.');must(!salaryPaid(s,p),'Cancele os pagamentos salariais antes de recalcular.');const raw=String(v.grams).replace(',','.');must(/^\d+(\.\d{1,3})?$/.test(raw),'Informe gramas com até três casas decimais; confirme 0 se necessário.');if(p.grams!==null)must(v.reason?.trim(),'Justifique a alteração de gramas.');p.grams=Math.round(Number(raw)*1000);must(Number.isSafeInteger(p.grams)&&p.grams<1e9,'Quantidade fora do limite.');p.notes=v.notes||'';
+  const p=get('payroll',v.id);must(earnsCommission(p),'Este funcionário recebe somente salário fixo.');must(!p.confirmed,'Reabra a conferência antes de alterar as gramas.');must(!salaryPaid(s,p),'Cancele os pagamentos salariais antes de recalcular.');const raw=String(v.grams).replace(',','.');must(/^\d+(\.\d{1,3})?$/.test(raw),'Informe gramas com até três casas decimais; confirme 0 se necessário.');if(p.grams!==null)must(v.reason?.trim(),'Justifique a alteração de gramas.');p.grams=Math.round(Number(raw)*1000);must(Number.isSafeInteger(p.grams)&&p.grams<1e9,'Quantidade fora do limite.');p.notes=v.notes||'';
  }
- else if(op==='confirmSalary'){const p=get('payroll',v.id);must(p.grams!==null,'Informe as gramas, mesmo que sejam zero.');p.confirmed=true;}
+ else if(op==='confirmSalary'){const p=get('payroll',v.id);must(commissionReady(p),'Informe as gramas, mesmo que sejam zero.');p.confirmed=true;}
  else if(op==='reopenSalary'){const p=get('payroll',v.id);must(v.reason?.trim(),'Justifique a reabertura.');must(!salaryPaid(s,p),'Cancele os pagamentos antes de reabrir.');p.confirmed=false;}
- else if(op==='paySalary'){const p=get('payroll',v.id);must(p.confirmed,'Confira a comissão antes de pagar.');const amount=positive(v.amount);must(amount<=salaryDue(s,p),'Pagamento maior que o saldo salarial.');account(v.account,'pay');move({account:v.account,amount:-amount,date:date(v.date),description:'Salário • '+get('employees',p.employee).name,kind:'salary',unit:p.unit,employee:p.employee,payroll:p.id,attachment:v.attachment||null});}
+ else if(op==='paySalary'){const p=get('payroll',v.id);must(p.confirmed,'Confira a remuneração antes de pagar.');const amount=positive(v.amount);must(amount<=salaryDue(s,p),'Pagamento maior que o saldo salarial.');account(v.account,'pay');move({account:v.account,amount:-amount,date:date(v.date),description:'Salário • '+get('employees',p.employee).name,kind:'salary',unit:p.unit,employee:p.employee,payroll:p.id,attachment:v.attachment||null});}
  else if(op==='close'){
   const a=account(),d=date(v.date);must(!s.closings.some(x=>x.account===a.id&&x.date===d&&!x.reopened),'Este caixa já está fechado.');must(!s.closings.some(x=>x.account===a.id&&x.date>d&&!x.reopened),'Existe um fechamento posterior.');const expected=balance(s,a.id,d),real=cents(v.real),difference=real-expected;must(difference===0||v.reason?.trim(),'Informe a justificativa da divergência.');s.closings.push({id:id(),account:a.id,date:d,expected,real,difference,reason:v.reason||'',actor,createdAt:new Date().toISOString()});
  }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {initial,apply,cents,balance,summary,salaryDue,remuneration,billPaid,today} from './engine.mjs';
+import {initial,apply,cents,balance,summary,salaryDue,remuneration,billPaid,today,earnsCommission,commissionReady} from './engine.mjs';
 const d=today(),month=d.slice(0,7),actor='test@example.com';
 const act=(s,op,v)=>apply(s,op,v,actor);
 function fixture(){let s=initial(actor);s.accounts.forEach(a=>{a.date='2020-01-01';a.opening=10000000;});s=act(s,'employee',{name:'Alex',role:'Comprador',unit:'u3',salary:'2500',admission:'2020-01-01',month});return s;}
@@ -14,3 +14,38 @@ test('fechamento exige justificativa e bloqueia lançamentos retroativos',()=>{l
 test('recorrências idempotentes e preservação da taxa histórica',()=>{let s=fixture();s=act(s,'bill',{name:'Internet',date:'2025-01-31',amount:'400',unit:'u0',category:'c2',recurring:true});s=act(s,'period',{month:'2025-02'});s=act(s,'period',{month:'2025-02'});assert.equal(s.bills.filter(b=>b.date==='2025-02-28').length,1);s=act(s,'rate',{month:'2099-01',value:'20'});s=act(s,'period',{month:'2099-01'});assert.equal(s.payroll.find(p=>p.month===month).rate,1000);assert.equal(s.payroll.find(p=>p.month==='2099-01').rate,2000);});
 
 test('vales podem ultrapassar salário e não impedem ajuste de comissão',()=>{let s=fixture(),p=s.payroll[0];s=act(s,'advance',{employee:p.employee,month,date:d,amount:'5000',description:'Vale extraordinário',account:'pay'});assert.equal(s.advances[0].amount,500000);assert.equal(salaryDue(s,s.payroll[0]),0);assert.equal(balance(s,'pay'),9500000);s=act(s,'grams',{id:p.id,grams:'0'});assert.equal(remuneration(s.payroll[0]),250000);assert.equal(summary(s,month,'u3').total,250000);s=act(s,'confirmSalary',{id:p.id});assert.equal(s.payroll[0].confirmed,true);});
+
+test('marketing com salário fixo não precisa informar gramas para receber',()=>{
+ let s=act(initial(actor),'employee',{name:'Marketing',role:'Marketing',unit:'u0',salary:'3200',compensationType:'fixed',admission:'2020-01-01',month});
+ const p=s.payroll[0];assert.equal(earnsCommission(p),false);assert.equal(commissionReady(p),true);assert.equal(remuneration(p),320000);
+ assert.throws(()=>act(s,'grams',{id:p.id,grams:'10'}),/somente salário fixo/);
+ s=act(s,'confirmSalary',{id:p.id});assert.equal(s.payroll[0].confirmed,true);
+ s=act(s,'paySalary',{id:p.id,amount:'3200',date:d,account:'pay'});assert.equal(salaryDue(s,s.payroll[0]),0);
+});
+
+test('comprador pode receber fixo mais gramas ou somente gramas, independentemente do cargo',()=>{
+ let s=fixture(),p=s.payroll[0];assert.equal(earnsCommission(p),true);
+ s=act(s,'employee',{id:p.employee,name:'Alex',role:'Gerente',unit:'u3',salary:'9999',compensationType:'grams_only',admission:'2020-01-01',month});
+ p=s.payroll[0];assert.equal(p.salary,0);assert.equal(p.compensationType,'grams_only');assert.equal(remuneration(p),0);
+ assert.throws(()=>act(s,'confirmSalary',{id:p.id}),/Informe as gramas/);
+ s=act(s,'grams',{id:p.id,grams:'25.5'});assert.equal(remuneration(s.payroll[0]),25500);
+ s=act(s,'confirmSalary',{id:p.id});assert.equal(salaryDue(s,s.payroll[0]),25500);
+});
+
+test('edição atualiza apenas folhas abertas e não reescreve períodos históricos ou pagos',()=>{
+ let s=fixture();const id=s.employees[0].id,previous='2025-10';
+ s=act(s,'period',{month:previous});const old=s.payroll.find(p=>p.month===previous);
+ s=act(s,'grams',{id:s.payroll.find(p=>p.month===month).id,grams:'3'});
+ s=act(s,'confirmSalary',{id:s.payroll.find(p=>p.month===month).id});
+ s=act(s,'employee',{id,name:'Alex',role:'Comprador',unit:'u3',salary:'4500',compensationType:'fixed',admission:'2020-01-01',month});
+ assert.equal(s.payroll.find(p=>p.month===previous).salary,old.salary);
+ assert.equal(s.payroll.find(p=>p.month===month).salary,250000);
+ assert.equal(s.employees[0].salary,450000);
+ s=act(s,'period',{month:'2099-01'});const next=s.payroll.find(p=>p.month==='2099-01');
+ assert.equal(next.salary,450000);assert.equal(next.compensationType,'fixed');
+});
+
+test('edição de funcionário em folha aberta aplica salário e modalidade no mês atual',()=>{
+ let s=fixture(),p=s.payroll[0];s=act(s,'employee',{id:p.employee,name:'Alex',role:'Marketing',unit:'u3',salary:'3000',compensationType:'fixed',admission:'2020-01-01',month});
+ p=s.payroll[0];assert.equal(p.salary,300000);assert.equal(p.compensationType,'fixed');assert.equal(remuneration(p),300000);assert.equal(commissionReady(p),true);
+});
