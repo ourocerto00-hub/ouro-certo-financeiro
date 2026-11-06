@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {initial,apply,cents,balance,summary,salaryDue,remuneration,billPaid,today,earnsCommission,commissionReady} from './engine.mjs';
+import {initial,apply,cents,balance,summary,salaryDue,remuneration,billPaid,today,earnsCommission,commissionReady,payrollNeedsSync} from './engine.mjs';
 const d=today(),month=d.slice(0,7),actor='test@example.com';
 const act=(s,op,v)=>apply(s,op,v,actor);
 function fixture(){let s=initial(actor);s.accounts.forEach(a=>{a.date='2020-01-01';a.opening=10000000;});s=act(s,'employee',{name:'Alex',role:'Comprador',unit:'u3',salary:'2500',admission:'2020-01-01',month});return s;}
@@ -37,9 +37,11 @@ test('edição atualiza apenas folhas abertas e não reescreve períodos histór
  s=act(s,'period',{month:previous});const old=s.payroll.find(p=>p.month===previous);
  s=act(s,'grams',{id:s.payroll.find(p=>p.month===month).id,grams:'3'});
  s=act(s,'confirmSalary',{id:s.payroll.find(p=>p.month===month).id});
+ s=act(s,'paySalary',{id:s.payroll.find(p=>p.month===month).id,date:d,account:'pay',amount:'2530'});
  s=act(s,'employee',{id,name:'Alex',role:'Comprador',unit:'u3',salary:'4500',compensationType:'fixed',admission:'2020-01-01',month});
  assert.equal(s.payroll.find(p=>p.month===previous).salary,old.salary);
  assert.equal(s.payroll.find(p=>p.month===month).salary,250000);
+ assert.equal(s.payroll.find(p=>p.month===month).compensationType,'fixed_plus_grams');
  assert.equal(s.employees[0].salary,450000);
  s=act(s,'period',{month:'2099-01'});const next=s.payroll.find(p=>p.month==='2099-01');
  assert.equal(next.salary,450000);assert.equal(next.compensationType,'fixed');
@@ -48,4 +50,22 @@ test('edição atualiza apenas folhas abertas e não reescreve períodos histór
 test('edição de funcionário em folha aberta aplica salário e modalidade no mês atual',()=>{
  let s=fixture(),p=s.payroll[0];s=act(s,'employee',{id:p.employee,name:'Alex',role:'Marketing',unit:'u3',salary:'3000',compensationType:'fixed',admission:'2020-01-01',month});
  p=s.payroll[0];assert.equal(p.salary,300000);assert.equal(p.compensationType,'fixed');assert.equal(remuneration(p),300000);assert.equal(commissionReady(p),true);
+});
+
+test('mudar para salário fixo retira gramas até de folha já conferida e ainda não paga',()=>{
+ let s=fixture(),p=s.payroll[0];s=act(s,'grams',{id:p.id,grams:'150'});s=act(s,'confirmSalary',{id:p.id});
+ s=act(s,'employee',{id:p.employee,name:'Alex',role:'Comprador',unit:'u3',salary:'2500',compensationType:'fixed',admission:'2020-01-01',month});
+ p=s.payroll[0];assert.equal(p.grams,null);assert.equal(p.compensationType,'fixed');assert.equal(p.confirmed,false);
+ assert.equal(remuneration(p),250000);assert.equal(salaryDue(s,p),250000);
+ assert.throws(()=>act(s,'grams',{id:p.id,grams:'10'}),/somente salário fixo/);
+});
+
+test('preparar competência corrige automaticamente folha antiga que ficou com gramas',()=>{
+ let s=fixture(),p=s.payroll[0];s=act(s,'grams',{id:p.id,grams:'120'});s=act(s,'confirmSalary',{id:p.id});
+ // Simula o defeito da versão anterior: o cadastro foi atualizado, mas a folha não.
+ s.employees[0].compensationType='fixed';
+ assert.equal(payrollNeedsSync(s,month),true);
+ s=act(s,'period',{month});p=s.payroll[0];
+ assert.equal(p.compensationType,'fixed');assert.equal(p.grams,null);assert.equal(p.confirmed,false);
+ assert.equal(remuneration(p),250000);assert.equal(payrollNeedsSync(s,month),false);
 });

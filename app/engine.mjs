@@ -31,6 +31,19 @@ export const earnsCommission=p=>compensationType(p)!=='fixed';
 export const commissionReady=p=>!earnsCommission(p)||p.grams!==null;
 export const remuneration=p=>p.salary+(!earnsCommission(p)||p.grams===null?0:Math.round(p.grams*p.rate/1000));
 export const salaryDue=(s,p)=>Math.max(0,remuneration(p)-advancePaid(s,p)-salaryPaid(s,p));
+const payrollDiffers=(p,e)=>p.salary!==e.salary||p.unit!==e.unit||compensationType(p)!==compensationType(e)||(!earnsCommission(e)&&p.grams!==null);
+const canSyncPayroll=(s,p)=>p.month>=today().slice(0,7)&&!salaryPaid(s,p);
+function syncPayroll(s,p,e){
+ if(!canSyncPayroll(s,p)||!payrollDiffers(p,e))return false;
+ p.salary=e.salary;p.unit=e.unit;p.compensationType=compensationType(e);
+ if(!earnsCommission(p))p.grams=null;
+ // O valor anterior deixa de ser considerado conferido se a regra foi alterada.
+ p.confirmed=false;
+ return true;
+}
+export function payrollNeedsSync(s,month){
+ return month>=today().slice(0,7)&&s.payroll.some(p=>p.month===month&&canSyncPayroll(s,p)&&s.employees.some(e=>e.id===p.employee&&payrollDiffers(p,e)));
+}
 export function summary(s,month,unit='all'){
  const filter=x=>unit==='all'||x.unit===unit;
  const bs=s.bills.filter(x=>active(x)&&x.date.startsWith(month)&&filter(x));
@@ -43,6 +56,7 @@ export function summary(s,month,unit='all'){
  return {total,pending,paid,advances,gold:s.accounts.filter(x=>x.purpose==='gold').reduce((n,a)=>n+balance(s,a.id),0),pay:s.accounts.filter(x=>x.purpose==='pay').reduce((n,a)=>n+balance(s,a.id),0)};
 }
 function ensurePeriod(s,month){period(month);for(const e of s.employees.filter(x=>x.active&&x.admission.slice(0,7)<=month)){if(!s.payroll.some(p=>p.employee===e.id&&p.month===month)){const rate=[...s.rates].filter(r=>r.month<=month).sort((a,b)=>b.month.localeCompare(a.month))[0]?.value||1000;s.payroll.push({id:id(),employee:e.id,unit:e.unit,month,salary:e.salary,grams:null,rate,compensationType:compensationType(e),confirmed:false,notes:''});}}
+ for(const p of s.payroll.filter(p=>p.month===month)){const e=s.employees.find(e=>e.id===p.employee);if(e)syncPayroll(s,p,e);}
  for(const b of [...s.bills].filter(x=>x.recurring&&active(x)&&!x.parent&&x.date.slice(0,7)<month)){
    const [year,mon]=b.date.slice(0,7).split('-').map(Number);
    let y=year,m=mon+1;
@@ -82,12 +96,9 @@ export function apply(source,op,input,actor){
   const salary=mode==='grams_only'?0:cents(v.salary);
   Object.assign(x,{name:text(v.name,'o nome'),unit:unit(),role:text(v.role,'o cargo'),salary,compensationType:mode,admission:date(v.admission),active:v.active!==false,notes:v.notes||''});
   if(!v.id)s.employees.push(x);
-  // Apenas competências abertas, do mês atual em diante, acompanham edições.
-  // Folhas conferidas ou já pagas e competências históricas permanecem intactas.
-  for(const p of s.payroll.filter(p=>p.employee===x.id&&p.month>=today().slice(0,7)&&!p.confirmed&&!salaryPaid(s,p))){
-   p.salary=salary;p.compensationType=mode;p.unit=x.unit;
-   if(!earnsCommission(p))p.grams=null;
-  }
+  // Atualiza folhas sem pagamentos mesmo se já foram conferidas: a nova regra
+  // exige nova conferência. Pagamentos realizados e meses antigos são imutáveis.
+  for(const p of s.payroll.filter(p=>p.employee===x.id))syncPayroll(s,p,x);
   ensurePeriod(s,v.month||today().slice(0,7));
  }
  else if(op==='bill'){
