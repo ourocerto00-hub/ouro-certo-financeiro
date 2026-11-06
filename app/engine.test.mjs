@@ -35,6 +35,8 @@ test('comprador pode receber fixo mais gramas ou somente gramas, independentemen
 test('edição atualiza apenas folhas abertas e não reescreve períodos históricos ou pagos',()=>{
  let s=fixture();const id=s.employees[0].id,previous='2025-10';
  s=act(s,'period',{month:previous});const old=s.payroll.find(p=>p.month===previous);
+ s=act(s,'grams',{id:old.id,grams:'0'});s=act(s,'confirmSalary',{id:old.id});
+ s=act(s,'paySalary',{id:old.id,date:'2025-10-10',account:'pay',amount:'2500'});
  s=act(s,'grams',{id:s.payroll.find(p=>p.month===month).id,grams:'3'});
  s=act(s,'confirmSalary',{id:s.payroll.find(p=>p.month===month).id});
  s=act(s,'paySalary',{id:s.payroll.find(p=>p.month===month).id,date:d,account:'pay',amount:'2530'});
@@ -68,4 +70,17 @@ test('preparar competência corrige automaticamente folha antiga que ficou com g
  s=act(s,'period',{month});p=s.payroll[0];
  assert.equal(p.compensationType,'fixed');assert.equal(p.grams,null);assert.equal(p.confirmed,false);
  assert.equal(remuneration(p),250000);assert.equal(payrollNeedsSync(s,month),false);
+});
+
+test('folha de competência anterior também perde gramas se ainda não foi paga',()=>{
+ let s=fixture(),historical='2026-10';s=act(s,'period',{month:historical});
+ const p=s.payroll.find(p=>p.month===historical);
+ s=act(s,'grams',{id:p.id,grams:'1066'});s=act(s,'confirmSalary',{id:p.id});
+ // O cadastro do Alef foi mudado para fixo, mas a folha de outubro ficou antiga.
+ s.employees[0].compensationType='fixed';
+ assert.equal(payrollNeedsSync(s,historical),true);
+ s=act(s,'period',{month:historical});const synced=s.payroll.find(x=>x.id===p.id);
+ assert.equal(synced.compensationType,'fixed');assert.equal(synced.grams,null);
+ assert.equal(synced.confirmed,false);assert.equal(remuneration(synced),250000);
+ assert.equal(payrollNeedsSync(s,historical),false);
 });
