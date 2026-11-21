@@ -112,6 +112,19 @@ export function apply(source,op,input,actor){
   const a=account();const d=date(v.date),amount=positive(v.amount);must(['in','out'].includes(v.direction),'Tipo inválido.');const outgoing=v.direction==='out';
   move({date:d,account:a.id,amount:outgoing?-amount:amount,description:text(v.description,'a descrição'),kind:outgoing?(a.purpose==='pay'?'expense':'gold'):'income',unit:outgoing&&a.purpose==='pay'?unit():(v.unit||null),category:outgoing&&a.purpose==='pay'?category():null,origin:outgoing?'':text(v.origin,'a origem financeira'),attachment:v.attachment||null});
  }
+ else if(op==='editExpense'){
+  const m=get('movements',v.id);
+  must(active(m)&&m.kind==='expense'&&m.amount<0&&!m.bill&&!m.payroll&&!m.advance&&!m.transfer,'Selecione uma despesa diária paga e ativa.');
+  const a=account(m.account,'pay'),d=date(v.date);
+  unlocked(m.account,m.date);unlocked(m.account,d);
+  must(d>=a.date,'A data é anterior ao saldo inicial da conta.');
+  const reason=text(v.reason,'a justificativa da alteração');
+  const nextUnit=v.unit===m.unit?get('units',m.unit).id:unit();
+  const nextCategory=v.category===m.category?get('categories',m.category).id:category();
+  const notes=String(v.notes??m.notes??'').trim();must(notes.length<=500,'Observações devem ter até 500 caracteres.');
+  // Corrige a mesma saída: identidade, conta, autoria e vínculos do pagamento são preservados.
+  Object.assign(m,{date:d,description:text(v.description,'a descrição'),unit:nextUnit,category:nextCategory,amount:-positive(v.amount),notes,attachment:v.attachment===undefined?m.attachment:v.attachment,editedBy:actor,editedAt:new Date().toISOString(),editReason:reason});
+ }
  else if(op==='transfer'){
   must(v.account!==v.destination,'Selecione duas contas diferentes.');account(v.destination);const amount=positive(v.amount),transfer=id(),description=text(v.description,'a descrição');move({date:date(v.date),account:v.account,amount:-amount,description,kind:'transfer',transfer});move({date:v.date,account:v.destination,amount,description,kind:'transfer',transfer});
  }

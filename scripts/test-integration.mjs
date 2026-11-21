@@ -28,4 +28,17 @@ await op('confirmSalary',{id:state.payroll[0].id});await op('paySalary',{id:stat
 assert.equal(salaryDue(state,state.payroll[0]),0);assert.equal(balance(state,'pay'),737655);assert.equal(paidMovements(state).length,2);
 const concurrent=await Promise.all([1,2].map(()=>call('/api/state',{revision,requestId:randomUUID(),op:'movement',input:{account:'pay',date:day,direction:'in',amount:'1',description:'Aporte concorrente',origin:'Teste'}})));
 assert.deepEqual(concurrent.map(x=>x.status).sort(),[200,409]);
-console.log('Integração HTTP aprovada: autenticação, vale único, 3 repetições idempotentes, revisão obsoleta, estorno, salário líquido e concorrência.');
+r=await call('/api/state');state=r.data.state;revision=r.data.revision;
+await op('movement',{date:day,account:'pay',direction:'out',amount:'100',description:'Anúncio original',unit:'u0',category:'c3'});
+const expense=state.movements.at(-1),count=state.movements.length,oldBalance=balance(state,'pay');
+const edit=await op('editExpense',{id:expense.id,date:day,description:'Anúncio corrigido',unit:'u1',category:'c4',amount:'150,25',notes:'Conferido',reason:'Correção de teste'});
+assert.equal(state.movements.length,count);assert.equal(balance(state,'pay'),oldBalance-5025);
+const editedRevision=revision;
+r=await call('/api/state',edit);assert.equal(r.status,200);assert.equal(r.data.revision,editedRevision);
+r=await call('/api/state');assert.equal(r.data.revision,editedRevision);
+const saved=r.data.state.movements.find(m=>m.id===expense.id);
+assert.equal(saved.description,'Anúncio corrigido');assert.equal(saved.unit,'u1');assert.equal(saved.category,'c4');assert.equal(saved.amount,-15025);assert.equal(saved.account,'pay');assert.equal(saved.kind,'expense');assert.ok(!saved.cancelled);
+r=await call('/api/state',{...edit,revision:editedRevision,requestId:randomUUID(),input:{...edit.input,amount:'0'}});assert.equal(r.status,400);
+r=await call('/api/state');assert.equal(r.data.revision,editedRevision);assert.equal(r.data.state.movements.length,count);
+r=await call('/api/state?audit');assert.equal(r.data.events[0].operation,'editExpense');assert.equal(r.data.events[0].justification,'Correção de teste');
+console.log('Integração HTTP aprovada: autenticação, idempotência, revisão obsoleta, estorno, salário, concorrência e edição de despesa persistida com auditoria e validação.');
