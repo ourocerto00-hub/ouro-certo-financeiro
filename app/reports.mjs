@@ -1,3 +1,4 @@
+import {selectAdvances,advancesTotal} from './advances-view.mjs';
 import {active,balance,billPaid,salaryDue,remuneration,advancePaid,salaryPaid,money,paidMovements,cashSummary,earnsCommission} from './engine.mjs';
 import {reportPeriod,selectBills,billTotals,billStatus} from './bills-view.mjs';
 export const REPORTS=['Contas a Pagar','Contas Pagas','Fechamento Caixa Ouro','Fechamento Caixa Pagamentos','Vales e Adiantamentos','Custos por Filial','Custos da Matriz','Salários e Comissões','Despesas Diárias por Unidade','Resumo Financeiro Geral','Fechamentos Consolidados'];
@@ -35,7 +36,8 @@ export function createReport(s,index,{month,from='',to='',unit='all',category='a
   const ms=paidMovements(s).filter(m=>range(m.date)&&filter(m)&&(index!==8||m.kind==='expense'));
   add(index===1?'Pagamentos realizados (um registro por saída)':'Despesas diárias',['Data','Descrição / funcionário','Unidade','Pago'],ms.map(m=>[fmt(m.date),`${m.kind==='advance'?'Vale / ':''}${m.description}${m.employee?' / '+name('employees',m.employee):''}`,name('units',m.unit),money(-m.amount)]),[.9,2.6,1.4,1.1],ms.reduce((n,m)=>n-m.amount,0));
  }else if(index===4){
-  const as=s.advances.filter(a=>range(a.date)&&filter(a));add('Vales pagos / dedução salarial',['Data / competência','Funcionário / descrição','Unidade','Valor'],as.map(a=>[`${fmt(a.date)} / ${a.month}`,`${name('employees',a.employee)} / ${a.description}`,name('units',a.unit),money(a.amount)]),[1.2,2.3,1.4,1.1],as.reduce((n,a)=>n+a.amount,0));
+  report.subtitle=`Competências salariais: ${start.slice(0,7)} a ${end.slice(0,7)}`;report.note=(isDemo?'DEMONSTRAÇÃO - DADOS FICTÍCIOS. ':'')+'Vales agrupados pela competência salarial. Data do pagamento apenas informativa. Cancelados excluídos dos totais.';
+  const as=selectAdvances(s,{fromMonth:start.slice(0,7),toMonth:end.slice(0,7),unit,category,search,includeCancelled:false});add('Vales por competência / dedução salarial',['Data / competência','Funcionário / descrição','Unidade','Valor'],as.map(a=>[`${fmt(a.date)} / ${a.month}`,`${name('employees',a.employee)} / ${a.description}`,name('units',a.unit),money(a.amount)]),[1.2,2.3,1.4,1.1],advancesTotal(as));
  }else if(index===7){
   s.payroll.filter(p=>payRange(p)&&(unit==='all'||p.unit===unit)).forEach(p=>{add(name('employees',p.employee)+' / '+p.month,['Componente','Detalhes','Valor'],[
    ['Unidade',name('units',p.unit),''],['Salário fixo','',money(p.salary)],['Comissão',earnsCommission(p)?`${p.grams===null?'Gramas não informadas':(p.grams/1000).toLocaleString('pt-BR')+' g'} x ${money(p.rate)} / g`:'Não recebe comissão',!earnsCommission(p)?money(0):p.grams===null?'A calcular':money(remuneration(p)-p.salary)],['Remuneração bruta',p.confirmed?'Conferida':'Conferência pendente',money(remuneration(p))],['Vales pagos','Deduzidos uma vez',money(advancePaid(s,p))],['Salário pago','',money(salaryPaid(s,p))],['Saldo a pagar','',money(salaryDue(s,p))]],[1.4,2.8,1.3]);});
