@@ -12,11 +12,11 @@ O Fecha Real fica abaixo dos seis cartões do Dashboard e mostra toda a rede, in
 
 ## Fechamento e correções
 
-Disponível a partir do último dia da competência no fuso America/Cuiaba, sem encerrar automaticamente. Financeiro pode lançar, editar e apagar parciais e corrigir registros acumulados anteriores; somente administrador pode fechar ou reabrir. O administrador revisa gramas, lucro bruto e contas exatas, informa origem/justificativa e confirma uma declaração explícita. O custo é sugerido pelo sistema, pode ser ajustado sem alterar contas existentes e exige explicação se divergir ou se houver folhas ainda não conferidas.
+Disponível em qualquer dia e horário, inclusive para uma competência futura. Somente o administrador designado no servidor pode ver o Fecha Real, lançar, editar, apagar, fechar, reabrir e baixar seus PDFs. O administrador revisa gramas, lucro bruto e contas exatas, informa origem/justificativa e confirma uma declaração explícita. O custo é sugerido pelo sistema, pode ser ajustado sem alterar contas existentes e exige explicação se divergir ou se houver folhas ainda não conferidas.
 
 O fechamento grava um retrato independente das obrigações, pagamentos informativos, pendências de folha, valores exatos, versão, autor, horário e justificativa. Mudanças posteriores nas obrigações não alteram esse retrato e produzem um alerta no painel. Para corrigir, reabrir com justificativa, revisar e confirmar novamente. A versão anterior permanece no histórico. O fechamento gerencial não bloqueia nem altera os fechamentos diários de caixa.
 
-Cada versão fechada tem PDF A4 autenticado, gerado no servidor a partir do registro persistido. Versão vigente aparece como oficial; versões reabertas/substituídas são históricas. Inclui período, horário/fuso, contas, ouro do mês, logística, bruto, líquido e auditoria. Não exporta um formulário não salvo como oficial.
+O administrador designado pode baixar um PDF parcial dos valores salvos antes de confirmar o fechamento oficial, em qualquer dia e horário. O parcial identifica “PARCIAL - NÃO OFICIAL”, usa os últimos valores salvos e as obrigações atuais da competência e não substitui uma versão oficial. Cada versão fechada também tem PDF A4 autenticado, gerado no servidor a partir do registro persistido. Versão vigente aparece como oficial; versões reabertas/substituídas são históricas. Inclui período, horário/fuso, contas, ouro do mês, logística, bruto, líquido e auditoria. Não exporta um formulário não salvo como oficial.
 
 ## Armazenamento e Railway
 
@@ -41,3 +41,12 @@ Esta verificação usa dados fictícios e não atesta os números reais da empre
 A lista Vales e Adiantamentos, seu total ativo e o PDF de vales selecionam a competência `advance.month`, independentemente da data do pagamento. Um vale da competência 2026-12 pago em novembro aparece em dezembro; a mesma regra vale para todos os meses e anos, incluindo janeiro do próximo ano. Cancelados ficam visíveis no histórico da tela, fora do total ativo e do PDF. Unidade e busca continuam aplicadas. O PDF identifica que o período é de competências, com a data de pagamento apenas informativa.
 
 Os caixas, Contas Pagas e o cartão do Dashboard continuam por data efetiva do pagamento, agora identificada no cartão. A correção não altera registros, datas, competências, saldos ou deduções salariais, nem cria saídas adicionais. Foram testados todos os doze meses, a virada de ano, cancelamentos, unidade, busca, PDF e um vale de dezembro pago em novembro.
+
+
+## Acesso exclusivo ao Fecha Real
+
+Configurar `FECHA_REAL_ADMIN_EMAIL` apenas no serviço do Gestão Financeira, usando o e-mail de login da conta autorizada. Essa conta também precisa ter perfil `admin`. A identidade é conferida no servidor pela sessão autenticada e pelo e-mail configurado, nunca pelo nome de exibição ou por campos enviados pelo navegador. A configuração não contém um e-mail pessoal no repositório. Se estiver ausente ou vazia, o acesso permanece bloqueado.
+
+Os demais usuários, inclusive outros administradores, não recebem os campos `management*` no estado corrente, nas respostas de gravação ou nos detalhes de revisões. A consulta de auditoria omite as operações reservadas. Todas as operações de Fecha Real e ambos os PDFs exigem a identidade autorizada; uma requisição repetida também é negada antes da verificação de idempotência. O servidor continua usando o estado completo ao gravar outros módulos, preservando os dados reservados mesmo quando o cliente não os recebe.
+
+Fechamento oficial não depende mais do último dia do mês: a decisão e a confirmação são do administrador designado. Reabertura, edição e uma nova confirmação preservam todas as versões oficiais anteriores. Os testes HTTP incluem um segundo administrador com o mesmo nome de exibição, um usuário financeiro, consultas de estado/auditoria/revisões, respostas normais e repetidas, operações reservadas, PDF parcial e oficial, fechamento futuro e preservação de dados ao gravar módulos comuns.

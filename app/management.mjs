@@ -84,7 +84,7 @@ export function applyManagement(s,op,v,actor,now=new Date()){
   const latest=accumulatedEntries(s).at(-1);
   Object.assign(s.managementAccumulated,{grams:latest?.grams??null,asOf:latest?.asOf??null,actor,at:timestamp});return s;
  }
- const end=monthEnd(v.month);
+ monthEnd(v.month);
  s.managementMonths??=[];
  let r=s.managementMonths.find(r=>r.month===v.month);
  if(!r){r={month:v.month,status:'draft',history:[]};s.managementMonths.push(r);}
@@ -107,7 +107,6 @@ export function applyManagement(s,op,v,actor,now=new Date()){
   check(r.status!=='closed','Reabra o fechamento com justificativa antes de alterar.');
   r.grams=milligrams(v.grams);r.gross=cents(v.gross);
   if(op==='managementClose'){
-   check(day>=end,'O fechamento oficial estará disponível no último dia do mês (America/Cuiaba).');
    check(v.reviewed===true,'Revise e confirme os valores exatos antes de fechar.');
    r.cost=cents(v.cost);logisticsCents(r.cost,r.grams);r.source=managementSource(s,v.month);
    check(r.cost===r.source.total&&!r.source.unconfirmedPayroll||String(v.adjustment||'').trim().length>=5,'Explique o ajuste do custo exato ou a conciliação das folhas ainda não conferidas.');
@@ -145,5 +144,27 @@ export function monthlyReport(s,month,version,issuedAt=new Date()){
    ]},
    {title:'Auditoria da competência',columns:['Data / estado','Responsável / ação','Justificativa'],widths:[1.2,1.4,1.6],rows:r.history.map(e=>[`${stamp(e.at)} / ${{draft:'Parcial',closed:'Fechado',reopened:'Reaberto'}[e.status]}`,`${e.actor} / ${{managementPartial:'Atualização parcial',managementClose:'Fechamento oficial',managementReopen:'Reabertura',managementEditPartial:'Edição do parcial',managementDeletePartial:'Exclusão do parcial'}[e.operation]}`,e.reason])}
   ]
+ };
+}
+
+export function partialMonthlyReport(s,month,user,issuedAt=new Date()){
+ monthEnd(month);
+ const r=(s.managementMonths||[]).find(record=>record.month===month);
+ const latest=partialEntries(r).at(-1);
+ const grams=latest?.grams??r?.grams,gross=latest?.gross??r?.gross;
+ check(grams!==null&&grams!==undefined&&gross!==null&&gross!==undefined,'Salve as gramas e o lucro bruto antes de baixar o parcial.');
+ const source=managementSource(s,month),cost=source.total,rate=logisticsCents(cost,grams),net=gross-cost;
+ const stamp=value=>new Date(value).toLocaleString('pt-BR',{timeZone:'America/Cuiaba'});
+ return {
+  subtitle:`Competência: ${month} | Período de referência: ${month}-01 a ${monthEnd(month)}`,
+  scope:'PARCIAL - NÃO OFICIAL | Todas as unidades | Obrigações atuais da competência',
+  issued:`Emitido por ${user} em ${stamp(issuedAt)} (America/Cuiaba). Último lançamento salvo: ${stamp(latest?.editedAt||latest?.at||r.updatedAt)}.`,
+  note:'Acompanhamento parcial. Não confirma nem substitui um fechamento oficial. Gramas e lucro bruto são os últimos valores salvos para acompanhamento; custos são as obrigações atuais da competência, sem ajustes exclusivos do fechamento oficial. A compra do ouro já está descontada no lucro bruto externo.',
+  stats:[{label:'Lucro bruto informado',value:money(gross)},{label:'Contas previstas',value:money(cost)},{label:'Lucro líquido parcial',value:signedMoney(net)}],
+  sections:[{title:'Resultado parcial salvo',columns:['Indicador','Valor / critério'],widths:[1.3,2],rows:[
+   ['Estado do documento','PARCIAL - NÃO OFICIAL'],['Gramas informadas',gramsLabel(grams)],['Custo por grama',rate===null?'Não calculável - nenhuma grama informada':money(rate)+' / g'],
+   ['Fórmula logística','Contas da competência / gramas informadas para a mesma competência'],['Lucro líquido parcial',signedMoney(net)],['Fórmula do resultado','Lucro bruto externo - contas da competência'],
+   ['Pagamentos por data (informativo)',money(source.paid)],['Folhas não conferidas / gramas pendentes',`${source.unconfirmedPayroll} / ${source.pendingGrams}`],['Fechamento oficial da competência',r.status==='closed'?`Existe versão oficial ${r.version}; este documento continua parcial.`:r.status==='reopened'?'Reaberto para revisão':'Ainda não confirmado']
+  ]}]
  };
 }
