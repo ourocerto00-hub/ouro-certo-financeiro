@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {initial,apply,summary} from './engine.mjs';
-import {applyManagement,milligrams,logisticsCents,managementView,monthlyReport,monthEnd} from './management.mjs';
+import {applyManagement,milligrams,logisticsCents,managementView,monthlyReport,monthEnd,partialEntries,managementSeries,accumulatedEntries} from './management.mjs';
 import {buildPDF} from './pdf-v13.mjs';
 const actor='admin@example.invalid',date=new Date('2026-11-30T16:00:00Z');
 const input={month:'2026-11',grams:'1000,125',gross:'70000',cost:'100000',reviewed:true,adjustment:'Custo exato conciliado',reason:'Conferência do sistema matriz'};
@@ -29,7 +29,7 @@ test('último dia no fuso Cuiabá; revisão e justificativas obrigatórias',()=>
  assert.throws(()=>act(initial(),'managementClose',{...input,adjustment:''}),/ajuste/);
  assert.throws(()=>act(initial(),'managementClose',{...input,reason:''}),/justificativa/);
  assert.throws(()=>act(initial(),'managementClose',{...input,cost:'-1'}));
- assert.throws(()=>act(initial(),'managementPartial',{...input,month:'2026-12'}),/futura/);
+ assert.equal(act(initial(),'managementPartial',{month:'2026-12',grams:'1,125',gross:'100'}).managementMonths[0].gross,10000);
 });
 test('parcial não é oficial; fechado exige reabertura; fonte posterior não muda PDF',()=>{
  let s=act(initial(),'managementPartial');assert.equal(managementView(s,'2026-11').cost,0);assert.throws(()=>monthlyReport(s,'2026-11'));
@@ -68,4 +68,46 @@ test('folha não conferida exige conciliação explícita mesmo com custo igual'
  const next=act(s,'managementClose',{...input,cost:'100',adjustment:'Folha conferida externamente no fechamento'});
  assert.equal(next.managementMonths[0].source.pendingGrams,1);
  assert.equal(next.managementMonths[0].source.unconfirmedPayroll,1);
+});
+
+
+test('parcial futuro sem justificativa, histórico completo e um resultado por mês',()=>{
+ let s=act(initial(),'managementPartial',{month:'2026-12',grams:'1000',gross:'70000'});
+ s=act(s,'managementPartial',{month:'2026-12',grams:'2000',gross:'120000'});
+ assert.equal(partialEntries(s.managementMonths[0]).length,2);
+ assert.equal(managementSeries(s).length,1);assert.equal(managementSeries(s)[0].net,12000000);
+ assert.equal(managementSeries(s)[0].grams,2000000);
+ assert.throws(()=>act(s,'managementClose',{...input,month:'2026-12'}),/último dia/);
+});
+test('editar antigo não substitui último; apagar último restaura anterior sem perder auditoria',()=>{
+ let s=act(initial(),'managementPartial',{month:'2026-12',grams:'100',gross:'700'});
+ s=act(s,'managementPartial',{month:'2026-12',grams:'200',gross:'1200'});
+ const [first,last]=partialEntries(s.managementMonths[0]);
+ s=act(s,'managementEditPartial',{month:'2026-12',entryId:first.id,grams:'150',gross:'900'});
+ assert.equal(managementView(s,'2026-12').gross,120000);
+ assert.equal(s.managementMonths[0].history[0].gross,70000);
+ s=act(s,'managementDeletePartial',{month:'2026-12',entryId:last.id});
+ assert.equal(managementView(s,'2026-12').gross,90000);
+ assert.equal(managementSeries(s).length,1);
+ s=act(s,'managementDeletePartial',{month:'2026-12',entryId:first.id});
+ assert.equal(managementView(s,'2026-12').gross,null);assert.equal(managementSeries(s).length,0);
+ assert.equal(s.managementMonths[0].history.length,5);
+ assert.throws(()=>act(s,'managementDeletePartial',{month:'2026-12',entryId:first.id}),/não encontrado/);
+});
+test('histórico anterior sem IDs é editável e fechamento oficial permanece protegido',()=>{
+ let s=act(initial(),'managementPartial',{month:'2026-11',grams:'100',gross:'700'});
+ delete s.managementMonths[0].history[0].id;
+ const oldId=partialEntries(s.managementMonths[0])[0].id;
+ s=act(s,'managementEditPartial',{month:'2026-11',entryId:oldId,grams:'110',gross:'800'});
+ assert.equal(managementView(s,'2026-11').gross,80000);
+ s=act(s,'managementClose');
+ for(const op of ['managementEditPartial','managementDeletePartial'])assert.throws(()=>act(s,op,{month:'2026-11',entryId:oldId,grams:'0',gross:'0'}),/Reabra/);
+});
+test('acumulado legado pode ser editado e apagado, mantendo registro original',()=>{
+ let s=initial();s.managementAccumulated={grams:100000,asOf:'2026-11-01',history:[{grams:100000,asOf:'2026-11-01',actor,at:date.toISOString(),reason:'Saldo anterior'}]};
+ const id=accumulatedEntries(s)[0].id;
+ s=act(s,'managementEditAccumulated',{entryId:id,grams:'123,456',asOf:'2026-11-02'});
+ assert.equal(accumulatedEntries(s)[0].grams,123456);assert.equal(s.managementAccumulated.history[0].grams,100000);
+ s=act(s,'managementDeleteAccumulated',{entryId:id});assert.equal(accumulatedEntries(s).length,0);assert.equal(s.managementAccumulated.grams,null);
+ assert.equal(s.managementAccumulated.history.length,3);
 });

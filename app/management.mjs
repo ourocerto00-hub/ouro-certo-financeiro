@@ -33,20 +33,73 @@ export function managementView(s,month){
  const grams=record?.grams??null,gross=record?.gross??null;
  return {record,source,cost,grams,gross,logistics:logisticsCents(cost,grams),net:gross===null?null:gross-cost};
 }
+// Saved updates are totals for a competence, never quantities to add together.
+export function partialEntries(record){
+ const entries=[];
+ for(const [index,event] of (record?.history||[]).entries()){
+  if(event.operation==='managementPartial')entries.push({...event,id:event.id||`${record.month}-${index}`,month:record.month});
+  if(event.operation==='managementEditPartial'){
+   const entry=entries.find(e=>e.id===event.targetId);
+   if(entry)Object.assign(entry,{grams:event.grams,gross:event.gross,editedAt:event.at,editedBy:event.actor});
+  }
+  if(event.operation==='managementDeletePartial'){
+   const entry=entries.find(e=>e.id===event.targetId);if(entry)entry.deleted=true;
+  }
+ }
+ return entries.filter(e=>!e.deleted);
+}
+export function managementSeries(s){
+ return (s.managementMonths||[]).map(r=>{
+  const v=managementView(s,r.month);
+  return {month:r.month,grams:v.grams,gross:v.gross,cost:v.cost,net:v.net,status:r.status};
+ }).filter(r=>r.gross!==null&&r.grams!==null).sort((a,b)=>a.month.localeCompare(b.month));
+}
+export function accumulatedEntries(s){
+ const entries=[];
+ for(const [index,event] of (s.managementAccumulated?.history||[]).entries()){
+  if(!event.operation||event.operation==='managementAccumulated')entries.push({...event,id:event.id||`accumulated-${index}`});
+  if(event.operation==='managementEditAccumulated'){
+   const entry=entries.find(e=>e.id===event.targetId);if(entry)Object.assign(entry,{grams:event.grams,asOf:event.asOf});
+  }
+  if(event.operation==='managementDeleteAccumulated'){
+   const entry=entries.find(e=>e.id===event.targetId);if(entry)entry.deleted=true;
+  }
+ }
+ return entries.filter(e=>!e.deleted);
+}
 const reason=value=>{const v=String(value??'').trim();check(v.length>=5&&v.length<=500,'Informe uma justificativa de 5 a 500 caracteres.');return v;};
 export function applyManagement(s,op,v,actor,now=new Date()){
  const timestamp=now.toISOString();
  const day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Cuiaba',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
- if(op==='managementAccumulated'){
-  check(/^\d{4}-\d{2}-\d{2}$/.test(v.asOf)&&!isNaN(Date.parse(v.asOf))&&new Date(v.asOf).toISOString().slice(0,10)===v.asOf&&v.asOf<=day,'Data de referência inválida ou futura.');
-  const entry={grams:milligrams(v.grams),asOf:v.asOf,actor,at:timestamp,reason:reason(v.reason)};
-  s.managementAccumulated={...entry,history:[...(s.managementAccumulated?.history||[]),entry]};return s;
+ if(['managementAccumulated','managementEditAccumulated','managementDeleteAccumulated'].includes(op)){
+  s.managementAccumulated??={history:[]};
+  const entries=accumulatedEntries(s);
+  if(op!=='managementAccumulated')check(entries.some(e=>e.id===v.entryId),'Registro acumulado não encontrado.');
+  const event={id:crypto.randomUUID(),targetId:v.entryId,operation:op,actor,at:timestamp,reason:op==='managementAccumulated'?reason(v.reason):op==='managementEditAccumulated'?'Edição do registro acumulado':'Exclusão do registro acumulado'};
+  if(op!=='managementDeleteAccumulated'){
+   check(/^\d{4}-\d{2}-\d{2}$/.test(v.asOf)&&!isNaN(Date.parse(v.asOf))&&new Date(v.asOf).toISOString().slice(0,10)===v.asOf&&v.asOf<=day,'Data de referência inválida ou futura.');
+   Object.assign(event,{grams:milligrams(v.grams),asOf:v.asOf});
+  }
+  s.managementAccumulated.history.push(event);
+  const latest=accumulatedEntries(s).at(-1);
+  Object.assign(s.managementAccumulated,{grams:latest?.grams??null,asOf:latest?.asOf??null,actor,at:timestamp});return s;
  }
- const end=monthEnd(v.month);check(v.month<=day.slice(0,7),'Não é permitido registrar competência futura.');
+ const end=monthEnd(v.month);
  s.managementMonths??=[];
  let r=s.managementMonths.find(r=>r.month===v.month);
  if(!r){r={month:v.month,status:'draft',history:[]};s.managementMonths.push(r);}
- const justification=reason(v.reason);
+ if(['managementEditPartial','managementDeletePartial'].includes(op)){
+  check(r.status!=='closed','Reabra o fechamento com justificativa antes de alterar.');
+  check(partialEntries(r).some(e=>e.id===v.entryId),'Lançamento não encontrado.');
+  const event={id:crypto.randomUUID(),targetId:v.entryId,operation:op,actor,at:timestamp,status:r.status,reason:op==='managementEditPartial'?'Edição do lançamento parcial':'Exclusão do lançamento parcial'};
+  if(op==='managementEditPartial'){
+   event.grams=milligrams(v.grams);event.gross=cents(v.gross);logisticsCents(managementSource(s,v.month).total,event.grams);
+  }
+  r.history.push(event);
+  const latest=partialEntries(r).at(-1);
+  r.grams=latest?.grams??null;r.gross=latest?.gross??null;r.updatedAt=timestamp;r.updatedBy=actor;return s;
+ }
+ const justification=op==='managementPartial'?'Atualização parcial do mês':reason(v.reason);
  if(op==='managementReopen'){
   check(r.status==='closed','O mês não está fechado.');
   r.status='reopened';
@@ -65,7 +118,7 @@ export function applyManagement(s,op,v,actor,now=new Date()){
  }
  r.updatedAt=timestamp;r.updatedBy=actor;
  const {history,...snapshot}=r;
- history.push({...snapshot,operation:op,reason:justification,at:timestamp,actor});
+ history.push({...snapshot,id:crypto.randomUUID(),operation:op,reason:justification,at:timestamp,actor});
  return s;
 }
 export function monthlyReport(s,month,version,issuedAt=new Date()){
@@ -90,7 +143,7 @@ export function monthlyReport(s,month,version,issuedAt=new Date()){
     ['Obrigações do sistema no fechamento',money(snapshot.source.total)],['Pagamentos por data no mês (informativo)',money(snapshot.source.paid)],
     ['Folhas não conferidas / gramas pendentes',`${snapshot.source.unconfirmedPayroll} / ${snapshot.source.pendingGrams}`],['Ajuste do custo informado',snapshot.adjustment||'Sem ajuste'],['Justificativa',snapshot.reason]
    ]},
-   {title:'Auditoria da competência',columns:['Data / estado','Responsável / ação','Justificativa'],widths:[1.2,1.4,1.6],rows:r.history.map(e=>[`${stamp(e.at)} / ${{draft:'Parcial',closed:'Fechado',reopened:'Reaberto'}[e.status]}`,`${e.actor} / ${{managementPartial:'Atualização parcial',managementClose:'Fechamento oficial',managementReopen:'Reabertura'}[e.operation]}`,e.reason])}
+   {title:'Auditoria da competência',columns:['Data / estado','Responsável / ação','Justificativa'],widths:[1.2,1.4,1.6],rows:r.history.map(e=>[`${stamp(e.at)} / ${{draft:'Parcial',closed:'Fechado',reopened:'Reaberto'}[e.status]}`,`${e.actor} / ${{managementPartial:'Atualização parcial',managementClose:'Fechamento oficial',managementReopen:'Reabertura',managementEditPartial:'Edição do parcial',managementDeletePartial:'Exclusão do parcial'}[e.operation]}`,e.reason])}
   ]
  };
 }

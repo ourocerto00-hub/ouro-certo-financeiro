@@ -66,6 +66,21 @@ try{
  pdf=await request('/api/management/pdf?month=2026-10&version=2',{cookie:admin});assert.equal(pdf.status,200);assert.ok(pdf.data.toString('latin1').includes('+R$ 20.000,00'));
  await writeFile(resolve(dataDir,'fechamento-positivo.pdf'),pdf.data);
  res=await request('/api/state?audit',{cookie:admin});assert.equal(res.data.events[0].operation,'managementClose');assert.equal(res.data.events[0].justification,input.reason);
+ const future='2099-12';
+ async function managementOp(op,input){const r=await request('/api/state',{cookie:finance,body:body(op,input)});assert.equal(r.status,200,JSON.stringify(r.data));await read();}
+ await managementOp('managementPartial',{month:future,grams:'100',gross:'700'});
+ await managementOp('managementPartial',{month:future,grams:'200',gross:'1200'});
+ const history=state.managementMonths.find(r=>r.month===future).history;
+ const firstId=history[0].id,lastId=history[1].id;
+ await managementOp('managementEditPartial',{month:future,entryId:firstId,grams:'150',gross:'900'});
+ assert.equal(state.managementMonths.find(r=>r.month===future).gross,120000);
+ await managementOp('managementDeletePartial',{month:future,entryId:lastId});
+ assert.equal(state.managementMonths.find(r=>r.month===future).gross,90000);
+ await stop();await start();await read();
+ assert.equal(state.managementMonths.find(r=>r.month===future).gross,90000);
+ await managementOp('managementDeletePartial',{month:future,entryId:firstId});
+ assert.equal(state.managementMonths.find(r=>r.month===future).gross,null);
+ assert.equal(state.managementMonths.find(r=>r.month==='2026-10').gross,12000000);
  console.log('Integração mensal aprovada: login, papéis, origem, idempotência, concorrência, reabertura, auditoria, versões PDF, preservação dos módulos e persistência após reinício.');
  console.log('PDFs de teste: '+dataDir);
 }finally{await stop();}

@@ -81,7 +81,7 @@ export function apply(source,op,input,actor){
  const unlocked=(a,d)=>{must(!s.closings.some(c=>c.account===a&&c.date>=d&&!c.reopened),'Período encerrado. Reabra o fechamento com justificativa antes de alterar.');};
  const move=m=>{date(m.date);const a=account(m.account);must(m.date>=a.date,'A data é anterior ao saldo inicial da conta.');unlocked(m.account,m.date);s.movements.push({id:id(),actor,...m});};
  const category=()=>{const c=get('categories',v.category);must(c.active,'Categoria inativa.');return c.id;};
- if(['managementPartial','managementAccumulated','managementClose','managementReopen'].includes(op))return applyManagement(s,op,v,actor);
+ if(['managementPartial','managementAccumulated','managementClose','managementReopen','managementEditPartial','managementDeletePartial','managementEditAccumulated','managementDeleteAccumulated'].includes(op))return applyManagement(s,op,v,actor);
  if(op==='period'){ensurePeriod(s,period(v.month));}
  else if(op==='unit'||op==='category'){
   const table=op==='unit'?'units':'categories',name=text(v.name,'o nome');must(!s[table].some(x=>x.id!==v.id&&x.name.toLocaleLowerCase()===name.toLocaleLowerCase()),'Já existe um cadastro com esse nome.');
