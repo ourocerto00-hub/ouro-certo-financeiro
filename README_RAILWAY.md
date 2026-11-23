@@ -11,3 +11,8 @@
 O volume contém `ouro-certo.sqlite` e `uploads`. Faça backups externos periódicos; uma cópia consistente de SQLite em modo WAL deve incluir o estado atual do banco (use backup SQLite ou pare o serviço antes de copiar os arquivos). O ZIP não contém banco ou segredos. Não use múltiplas réplicas compartilhando o arquivo SQLite.
 
 A validação local não publica o serviço no Railway nem no GitHub. O workflow incluído valida o código em cada push e pull request.
+
+
+## Fecha Real exclusivo
+
+Defina `FECHA_REAL_ADMIN_EMAIL` no serviço financeiro com o e-mail do administrador autorizado. O perfil da conta também precisa ser `admin`. Sem essa configuração, o painel e suas APIs ficam bloqueados. Os demais módulos mantêm suas permissões existentes. Consulte FECHAMENTO_MENSAL.md para PDFs parciais, fechamento oficial a qualquer momento e auditoria.

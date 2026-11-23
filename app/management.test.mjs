@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {initial,apply,summary} from './engine.mjs';
-import {applyManagement,milligrams,logisticsCents,managementView,monthlyReport,monthEnd,partialEntries,managementSeries,accumulatedEntries} from './management.mjs';
+import {applyManagement,milligrams,logisticsCents,managementView,monthlyReport,monthEnd,partialEntries,managementSeries,accumulatedEntries,partialMonthlyReport} from './management.mjs';
 import {buildPDF} from './pdf-v13.mjs';
 const actor='admin@example.invalid',date=new Date('2026-11-30T16:00:00Z');
 const input={month:'2026-11',grams:'1000,125',gross:'70000',cost:'100000',reviewed:true,adjustment:'Custo exato conciliado',reason:'Conferência do sistema matriz'};
@@ -23,8 +23,8 @@ test('exemplos solicitados, mês separado do acumulado, dados legados preservado
  s=act(s,'managementClose',{...input,gross:'120000'});v=managementView(s,'2026-11');assert.equal(v.net,2000000);assert.equal(v.record.version,2);
  assert.equal(v.record.history[0].gross,7000000);
 });
-test('último dia no fuso Cuiabá; revisão e justificativas obrigatórias',()=>{
- assert.throws(()=>act(initial(),'managementClose',input,new Date('2026-11-30T02:00:00Z')),/último dia/);
+test('fechamento em qualquer dia e horário; revisão e justificativas obrigatórias',()=>{
+ assert.equal(act(initial(),'managementClose',input,new Date('2026-11-01T02:00:00Z')).managementMonths[0].status,'closed');
  assert.throws(()=>act(initial(),'managementClose',{...input,reviewed:false}),/Revise/);
  assert.throws(()=>act(initial(),'managementClose',{...input,adjustment:''}),/ajuste/);
  assert.throws(()=>act(initial(),'managementClose',{...input,reason:''}),/justificativa/);
@@ -77,7 +77,7 @@ test('parcial futuro sem justificativa, histórico completo e um resultado por m
  assert.equal(partialEntries(s.managementMonths[0]).length,2);
  assert.equal(managementSeries(s).length,1);assert.equal(managementSeries(s)[0].net,12000000);
  assert.equal(managementSeries(s)[0].grams,2000000);
- assert.throws(()=>act(s,'managementClose',{...input,month:'2026-12'}),/último dia/);
+ assert.equal(act(s,'managementClose',{...input,month:'2026-12'}).managementMonths[0].status,'closed');
 });
 test('editar antigo não substitui último; apagar último restaura anterior sem perder auditoria',()=>{
  let s=act(initial(),'managementPartial',{month:'2026-12',grams:'100',gross:'700'});
@@ -111,3 +111,26 @@ test('acumulado legado pode ser editado e apagado, mantendo registro original',(
  s=act(s,'managementDeleteAccumulated',{entryId:id});assert.equal(accumulatedEntries(s).length,0);assert.equal(s.managementAccumulated.grams,null);
  assert.equal(s.managementAccumulated.history.length,3);
 });
+
+
+test('PDF parcial existe antes do oficial e identifica sua natureza e última atualização',()=>{
+ let s=act(initial(),'managementPartial',{month:'2099-12',grams:'1000,125',gross:'1200'});
+ let report=partialMonthlyReport(s,'2099-12',actor,date);
+ assert.match(report.scope,/PARCIAL - NÃO OFICIAL/);
+ assert.throws(()=>monthlyReport(s,'2099-12'));
+ const before=structuredClone(s);
+ const pdf=Buffer.from(buildPDF('Fecha Real - Parcial',report)).toString('latin1');
+ assert.ok(pdf.includes('PARCIAL - NÃO OFICIAL'));assert.ok(pdf.includes('1.000,125 g'));assert.ok(pdf.includes('+R$ 1.200,00'));
+ assert.deepEqual(s,before);
+ s=act(s,'managementClose',{...input,month:'2099-12',grams:'1000',gross:'2000',cost:'1000'});
+ report=partialMonthlyReport(s,'2099-12',actor,date);
+ assert.match(report.scope,/PARCIAL/);assert.match(JSON.stringify(report),/versão oficial/);
+ assert.match(monthlyReport(s,'2099-12').scope,/OFICIAL FECHADO/);
+ s=act(s,'managementReopen',{month:'2099-12',reason:'Correção solicitada pelo administrador'});
+ s=act(s,'managementPartial',{month:'2099-12',grams:'1000',gross:'2500'});
+ assert.ok(JSON.stringify(partialMonthlyReport(s,'2099-12',actor,date)).includes('2.500,00'));
+ assert.match(monthlyReport(s,'2099-12').scope,/HISTÓRICO/);
+ s=act(s,'managementClose',{...input,month:'2099-12',gross:'2500',cost:'1000'});
+ assert.equal(s.managementMonths[0].version,2);
+});
+test('PDF parcial sem dados salvos é recusado',()=>assert.throws(()=>partialMonthlyReport(initial(),'2026-12',actor),/Salve/));

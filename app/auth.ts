@@ -1,6 +1,7 @@
 
 import { env } from '../server/runtime';
 import { cookies } from 'next/headers';
+import {canAccessManagement} from './management-access.mjs';
 
 const encoder = new TextEncoder();
 const COOKIE = 'ouro_session';
@@ -201,4 +202,14 @@ export function authError(error: unknown): Response {
       },
     }
   );
+}
+
+// Fecha Real is private to the explicitly configured administrator.
+export function canManageReal(user: Awaited<ReturnType<typeof currentUser>>) {
+  return canAccessManagement(user, process.env.FECHA_REAL_ADMIN_EMAIL);
+}
+export async function requireManagementUser() {
+  const user = await requireRole('admin');
+  if (!canManageReal(user)) throw new Error('FORBIDDEN');
+  return user;
 }

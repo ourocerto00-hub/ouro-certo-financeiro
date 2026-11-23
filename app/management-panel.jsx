@@ -1,7 +1,7 @@
 'use client';
 import {useRef,useState} from 'react';
 import {today,money,cents} from './engine.mjs';
-import {managementView,managementSeries,partialEntries,accumulatedEntries,monthEnd,milligrams,gramsLabel,signedMoney,logisticsCents} from './management.mjs';
+import {managementView,managementSeries,partialEntries,accumulatedEntries,milligrams,gramsLabel,signedMoney,logisticsCents} from './management.mjs';
 
 const stamp=value=>new Date(value).toLocaleString('pt-BR',{timeZone:'America/Cuiaba'});
 const inputGrams=value=>value===null||value===undefined?'':String(value/1000).replace('.',',');
@@ -49,10 +49,12 @@ export default function ManagementPanel({state,month,role,mutate,busy,isDemo}){
   {r?.status==='closed'&&r.source.total!==view.source.total&&<p className="result-negative" role="status">As obrigações do sistema mudaram após o fechamento ({money(view.source.total)} atualmente). O resultado oficial foi preservado; revise e reabra se necessário.</p>}
   <div className="toolbar"><div>
    {r?.status!=='closed'&&<button type="button" className="primary" disabled={busy} onClick={()=>open('partial')}>Atualizar parcial do mês</button>}
-   {admin&&r?.status!=='closed'&&<button type="button" className="button" disabled={busy||today()<monthEnd(month)} onClick={()=>open('close')}>Fechamento mensal oficial</button>}
+   {admin&&r?.status!=='closed'&&<button type="button" className="button" disabled={busy} onClick={()=>open('close')}>Fechamento mensal oficial</button>}
    {admin&&r?.status==='closed'&&<button type="button" className="button" disabled={busy} onClick={()=>open('reopen')}>Reabrir com justificativa</button>}
+   {r?.gross!==null&&r?.gross!==undefined&&r?.grams!==null&&r?.grams!==undefined&&!isDemo&&<a className="button" href={`/api/management/pdf?month=${month}&mode=partial`} target="_blank" rel="noreferrer">Baixar PDF parcial</a>}
+   {r?.status==='closed'&&!isDemo&&<a className="button" href={`/api/management/pdf?month=${month}&version=${r.version}`} target="_blank" rel="noreferrer">Baixar PDF oficial</a>}
   </div></div>
-  {r?.status!=='closed'&&<p>Lançamentos antecipados já estão liberados. A confirmação oficial exige revisão do administrador a partir de {monthEnd(month)}.</p>}
+  <p>Você decide quando confirmar o fechamento oficial, em qualquer dia e horário. Os PDFs usam os valores já salvos: parcial para acompanhamento e oficial após a confirmação.</p>
   {editor&&<form onSubmit={submit} className="management-editor">
    <h3>{({partial:'Atualizar parcial do mês',edit:'Editar lançamento',delete:'Apagar lançamento',editLegacy:'Editar acumulado anterior',deleteLegacy:'Apagar acumulado anterior',close:'Revisar valores exatos e fechar mês',reopen:'Reabrir fechamento oficial'})[editor]} · {values.month}</h3>
    {deletion?<p>Apagar este registro de {gramsLabel(values.grams?milligrams(values.grams):0)}{editor==='delete'?' / '+money(cents(values.gross)):''}? Se for o último lançamento da competência, o anterior voltará a ser considerado. A exclusão permanece registrada na auditoria.</p>:<div className="form-grid">
