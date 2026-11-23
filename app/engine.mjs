@@ -1,3 +1,4 @@
+import {applyManagement} from './management.mjs';
 export const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Cuiaba',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 export const money=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format((v||0)/100);
 export function cents(v){let s=String(v??'').trim().replace(/\s|R\$/g,''); if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');if(!/^\d+(\.\d{1,2})?$/.test(s))throw Error('Informe um valor válido com até duas casas decimais.');const [a,b='']=s.split('.');const n=Number(a)*100+Number(b.padEnd(2,'0'));if(!Number.isSafeInteger(n)||n>1e13)throw Error('Valor fora do limite.');return n;}
@@ -80,6 +81,7 @@ export function apply(source,op,input,actor){
  const unlocked=(a,d)=>{must(!s.closings.some(c=>c.account===a&&c.date>=d&&!c.reopened),'Período encerrado. Reabra o fechamento com justificativa antes de alterar.');};
  const move=m=>{date(m.date);const a=account(m.account);must(m.date>=a.date,'A data é anterior ao saldo inicial da conta.');unlocked(m.account,m.date);s.movements.push({id:id(),actor,...m});};
  const category=()=>{const c=get('categories',v.category);must(c.active,'Categoria inativa.');return c.id;};
+ if(['managementPartial','managementAccumulated','managementClose','managementReopen'].includes(op))return applyManagement(s,op,v,actor);
  if(op==='period'){ensurePeriod(s,period(v.month));}
  else if(op==='unit'||op==='category'){
   const table=op==='unit'?'units':'categories',name=text(v.name,'o nome');must(!s[table].some(x=>x.id!==v.id&&x.name.toLocaleLowerCase()===name.toLocaleLowerCase()),'Já existe um cadastro com esse nome.');

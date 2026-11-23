@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { currentUser } from './auth';
-import Finance from './finance';
+import Finance from './finance.jsx';
 export const dynamic = 'force-dynamic';
 export default async function Home() {
   const user = await currentUser();
