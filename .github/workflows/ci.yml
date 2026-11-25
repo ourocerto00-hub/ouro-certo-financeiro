@@ -14,3 +14,4 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: node scripts/test-management-integration.mjs
+      - run: node scripts/test-bill-payments-integration.mjs
