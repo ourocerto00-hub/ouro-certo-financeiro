@@ -1,4 +1,4 @@
-import {active,billPaid,today} from './engine.mjs';
+import {active,billPaid,billExternalPaid,externalPayments,today} from './engine.mjs';
 
 export function reportPeriod({month,from='',to=''}={}){
  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month||''))throw Error('Informe uma competência válida.');
@@ -12,14 +12,15 @@ export function reportPeriod({month,from='',to=''}={}){
 export function billStatus(s,b,asOf=today()){
  if(!active(b))return 'Cancelada';
  const paid=billPaid(s,b);
- return paid>=b.amount?'Paga':paid>0?'Parcialmente paga':b.date<asOf?'Vencida':'Pendente';
+ const external=billExternalPaid(s,b),suffix=external?(external===paid?' (externamente)':' (mista)'):'';
+ return paid>=b.amount?'Paga'+suffix:paid>0?'Parcialmente paga'+suffix:b.date<asOf?'Vencida':'Pendente';
 }
 
 // The table and its PDF use this same read-only selector, including settled/cancelled records.
 export function selectBills(s,{unit='all',category='all',search='',...period}={}){
  const {start,end}=reportPeriod(period),query=String(search).trim().toLocaleLowerCase('pt-BR');
  const name=(table,id)=>s[table].find(x=>x.id===id)?.name||'';
- return s.bills.filter(b=>b.date>=start&&b.date<=end&&(unit==='all'||b.unit===unit)&&(category==='all'||b.category===category)&&(!query||[JSON.stringify(b),name('units',b.unit),name('categories',b.category)].join(' ').toLocaleLowerCase('pt-BR').includes(query)));
+ return s.bills.filter(b=>b.date>=start&&b.date<=end&&(unit==='all'||b.unit===unit)&&(category==='all'||b.category===category)&&(!query||[JSON.stringify(b),name('units',b.unit),name('categories',b.category),billStatus(s,b),...externalPayments(s).filter(p=>p.bill===b.id&&active(p)).map(p=>p.origin)].join(' ').toLocaleLowerCase('pt-BR').includes(query)));
 }
 
 export function billTotals(s,bills){

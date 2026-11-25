@@ -12,8 +12,16 @@ export function initial(email=''){
  return {units:['Matriz','Sorriso','Nova Mutum','Campo Novo dos Parecis','Tangará da Serra','Vilhena','Cacoal'].map((name,i)=>({id:'u'+i,name,city:i?name:'Sede',state:i>4?'RO':'MT',type:i?'Filial':'Matriz',active:true})),categories:['Aluguel','Energia','Internet','Marketing','Combustível','Manutenção','Despesas administrativas','Salários'].map((name,i)=>({id:'c'+i,name,active:true})),accounts:[{id:'gold',name:'Nubank — Ouro Certo',purpose:'gold',opening:0,date:today()},{id:'pay',name:'Nubank — Ouro Passo',purpose:'pay',opening:0,date:today()}],employees:[],bills:[],movements:[],advances:[],payroll:[],closings:[],rates:[{month:'2000-01',value:1000}],users:email?[{id:id(),name:email,email,active:true}]:[]};
 }
 export const active=x=>!x.cancelled;
-// Contas Pagas is a view of the ledger, never a second payment table.
+// Internal payments remain in the cash ledger. External settlements never enter it.
 export const paidMovements=s=>s.movements.filter(m=>active(m)&&m.amount<0&&['expense','bill','advance','salary'].includes(m.kind));
+export const externalPayments=s=>s.externalPayments||[];
+export const billExternalPaid=(s,b)=>externalPayments(s).filter(p=>p.bill===b.id&&active(p)).reduce((n,p)=>n+p.amount,0);
+// Read-only projection with positive values; never persisted as cash movements.
+export function paidRecords(s,{includeCancelled=false}={}){
+ const internal=s.movements.filter(m=>m.amount<0&&['expense','bill','advance','salary'].includes(m.kind)).map(m=>({...m,value:-m.amount,source:'internal',table:'movements'}));
+ const external=externalPayments(s).map(p=>({...p,value:p.amount,kind:'bill',source:'external',table:'externalPayments'}));
+ return [...internal,...external].filter(p=>includeCancelled||active(p)).sort((a,b)=>a.date.localeCompare(b.date)||String(a.id||'').localeCompare(String(b.id||'')));
+}
 export function cashSummary(s,account,from,to=from){
  if(from>to)throw Error('Período inválido.');
  const a=s.accounts.find(x=>x.id===account);if(!a)throw Error('Conta não encontrada.');
@@ -23,7 +31,7 @@ export function cashSummary(s,account,from,to=from){
  return {opening,entries,exits,expected:opening+entries-exits};
 }
 export const balance=(s,account,until='9999-12-31')=>{const a=s.accounts.find(x=>x.id===account);return (a&&a.date<=until?a.opening:0)+s.movements.filter(x=>x.account===account&&x.date<=until&&active(x)).reduce((n,x)=>n+x.amount,0);};
-export const billPaid=(s,b)=>s.movements.filter(x=>x.bill===b.id&&active(x)).reduce((n,x)=>n-x.amount,0);
+export const billPaid=(s,b)=>s.movements.filter(x=>x.bill===b.id&&active(x)).reduce((n,x)=>n-x.amount,0)+billExternalPaid(s,b);
 export const advancePaid=(s,p)=>s.advances.filter(x=>x.employee===p.employee&&x.month===p.month&&active(x)).reduce((n,x)=>n+x.amount,0);
 export const salaryPaid=(s,p)=>s.movements.filter(x=>x.payroll===p.id&&x.kind==='salary'&&active(x)).reduce((n,x)=>n-x.amount,0);
 // Registros anteriores à opção de remuneração continuam com comissão habilitada.
@@ -52,7 +60,7 @@ export function summary(s,month,unit='all'){
  const daily=s.movements.filter(x=>active(x)&&x.kind==='expense'&&x.date.startsWith(month)&&filter(x));
  const total=bs.reduce((n,b)=>n+b.amount,0)+ps.reduce((n,p)=>n+remuneration(p),0)+daily.reduce((n,m)=>n-m.amount,0);
  const pending=bs.reduce((n,b)=>n+Math.max(0,b.amount-billPaid(s,b)),0)+ps.reduce((n,p)=>n+salaryDue(s,p),0);
- const paid=paidMovements(s).filter(x=>x.date.startsWith(month)&&filter(x)).reduce((n,m)=>n-m.amount,0);
+ const paid=paidRecords(s).filter(x=>x.date.startsWith(month)&&filter(x)).reduce((n,p)=>n+p.value,0);
  const advances=s.advances.filter(x=>active(x)&&x.date.startsWith(month)&&filter(x)).reduce((n,x)=>n+x.amount,0);
  return {total,pending,paid,advances,gold:s.accounts.filter(x=>x.purpose==='gold').reduce((n,a)=>n+balance(s,a.id),0),pay:s.accounts.filter(x=>x.purpose==='pay').reduce((n,a)=>n+balance(s,a.id),0)};
 }
@@ -81,6 +89,14 @@ export function apply(source,op,input,actor){
  const unlocked=(a,d)=>{must(!s.closings.some(c=>c.account===a&&c.date>=d&&!c.reopened),'Período encerrado. Reabra o fechamento com justificativa antes de alterar.');};
  const move=m=>{date(m.date);const a=account(m.account);must(m.date>=a.date,'A data é anterior ao saldo inicial da conta.');unlocked(m.account,m.date);s.movements.push({id:id(),actor,...m});};
  const category=()=>{const c=get('categories',v.category);must(c.active,'Categoria inativa.');return c.id;};
+ const paymentSource=()=>{const source=v.paymentSource??'internal';must(['internal','external'].includes(source),'Selecione uma origem de pagamento válida.');return source;};
+ const settleExternally=(b,amount,paymentDate)=>{
+  must(!v.account,'Pagamento externo não pode ter conta financeira interna.');
+  const d=date(paymentDate);must(d<=today(),'Pagamento já realizado não pode ter data futura.');
+  const origin=String(v.externalOrigin||'').trim();must(origin.length<=500,'Origem externa deve ter até 500 caracteres.');
+  s.externalPayments??=[];
+  s.externalPayments.push({id:id(),bill:b.id,date:d,amount,unit:b.unit,category:b.category,billName:b.name,description:b.description||b.name,origin,actor,createdAt:new Date().toISOString(),attachment:v.attachment||null});
+ };
  if(['managementPartial','managementAccumulated','managementClose','managementReopen','managementEditPartial','managementDeletePartial','managementEditAccumulated','managementDeleteAccumulated'].includes(op))return applyManagement(s,op,v,actor);
  if(op==='period'){ensurePeriod(s,period(v.month));}
  else if(op==='unit'||op==='category'){
@@ -104,11 +120,15 @@ export function apply(source,op,input,actor){
   ensurePeriod(s,v.month||today().slice(0,7));
  }
  else if(op==='bill'){
+  const source=paymentSource();must(!v.id||source==='internal','Use o pagamento da conta para registrar uma quitação externa.');
   const x=v.id?get('bills',v.id):{id:id()};if(v.id){must(!x.cancelled,'Conta cancelada.');must(billPaid(s,x)===0,'Uma conta com pagamentos não pode ser alterada. Cancele os pagamentos antes.');must(v.reason?.trim(),'Justifique a alteração.');}
   Object.assign(x,{name:text(v.name,'o nome da conta'),description:text(v.description||v.name,'a descrição'),unit:unit(),category:category(),amount:positive(v.amount),date:date(v.date),recurring:!!v.recurring,notes:v.notes||'',attachment:v.attachment||null});if(!v.id)s.bills.push(x);
+  if(source==='external')settleExternally(x,x.amount,v.paymentDate);
  }
  else if(op==='paybill'){
-  const b=get('bills',v.id);must(active(b),'Conta cancelada.');const amount=positive(v.amount);must(amount<=b.amount-billPaid(s,b),'Pagamento maior que o saldo pendente.');account(v.account,'pay');move({date:date(v.date),account:v.account,amount:-amount,description:b.name,kind:'bill',unit:b.unit,category:b.category,bill:b.id,attachment:v.attachment||null});
+  const b=get('bills',v.id);must(active(b),'Conta cancelada.');const amount=positive(v.amount);must(amount<=b.amount-billPaid(s,b),'Pagamento maior que o saldo pendente.');
+  if(paymentSource()==='external')settleExternally(b,amount,v.date);
+  else {account(v.account,'pay');move({date:date(v.date),account:v.account,amount:-amount,description:b.name,kind:'bill',unit:b.unit,category:b.category,bill:b.id,attachment:v.attachment||null});}
  }
  else if(op==='movement'){
   const a=account();const d=date(v.date),amount=positive(v.amount);must(['in','out'].includes(v.direction),'Tipo inválido.');const outgoing=v.direction==='out';
@@ -144,7 +164,12 @@ export function apply(source,op,input,actor){
  }
  else if(op==='reopen'){const c=get('closings',v.id);must(v.reason?.trim(),'Justifique a reabertura.');must(!s.closings.some(x=>x.account===c.account&&x.date>c.date&&!x.reopened),'Reabra primeiro os fechamentos posteriores.');c.reopened=true;c.reopenReason=v.reason;}
  else if(op==='cancel'){
-  must(['bills','movements','advances'].includes(v.table),'Tipo de cancelamento inválido.');
+  must(['bills','movements','advances','externalPayments'].includes(v.table),'Tipo de cancelamento inválido.');
+  if(v.table==='externalPayments'){
+   const p=get('externalPayments',v.id);must(active(p),'Pagamento externo já cancelado.');
+   p.reason=text(v.reason,'a justificativa do cancelamento');p.cancelled=true;p.cancelledBy=actor;p.cancelledAt=new Date().toISOString();
+   return s;
+  }
   must(v.reason?.trim(),'Informe a justificativa do cancelamento.');if(v.table==='bills'){const b=get('bills',v.id);must(!billPaid(s,b),'Cancele os pagamentos antes de cancelar a conta.');b.cancelled=true;b.reason=v.reason;}else {const m=v.table==='advances'?s.movements.find(x=>x.advance===v.id):get('movements',v.id);must(m&&active(m),'Movimentação já cancelada ou inexistente.');const list=m.transfer?s.movements.filter(x=>x.transfer===m.transfer):[m];for(const x of list){unlocked(x.account,x.date);x.cancelled=true;x.reason=v.reason;if(x.advance){const a=get('advances',x.advance);a.cancelled=true;a.reason=v.reason;}}}
  }
  else throw Error('Operação desconhecida.');
