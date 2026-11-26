@@ -92,7 +92,7 @@ export function apply(source,op,input,actor){
  const paymentSource=()=>{const source=v.paymentSource??'internal';must(['internal','external'].includes(source),'Selecione uma origem de pagamento válida.');return source;};
  const settleExternally=(b,amount,paymentDate)=>{
   must(!v.account,'Pagamento externo não pode ter conta financeira interna.');
-  const d=date(paymentDate);must(d<=today(),'Pagamento já realizado não pode ter data futura.');
+  const d=date(paymentDate);
   const origin=String(v.externalOrigin||'').trim();must(origin.length<=500,'Origem externa deve ter até 500 caracteres.');
   s.externalPayments??=[];
   s.externalPayments.push({id:id(),bill:b.id,date:d,amount,unit:b.unit,category:b.category,billName:b.name,description:b.description||b.name,origin,actor,createdAt:new Date().toISOString(),attachment:v.attachment||null});

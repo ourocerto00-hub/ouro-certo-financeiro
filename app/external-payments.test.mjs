@@ -38,12 +38,35 @@ test('quitação externa integral tem registro auditável próprio e não cria m
  assert.deepEqual(before,snapshot);
 });
 
-test('valida origem, data real, valor, unidade e categoria sem deixar gravação parcial',()=>{
- const s=fixture(),snapshot=structuredClone(s),future=new Date(today()+'T00:00:00Z');future.setUTCDate(future.getUTCDate()+1);
- for(const overrides of [{paymentSource:'other'},{paymentDate:''},{paymentDate:'2025-02-30'},{paymentDate:future.toISOString().slice(0,10)},{amount:'0'},{amount:'-1'},{unit:'inexistente'},{category:'inexistente'},{account:'pay'},{externalOrigin:'x'.repeat(501)}]){
+test('valida origem, data válida, valor, unidade e categoria sem deixar gravação parcial',()=>{
+ const s=fixture(),snapshot=structuredClone(s);
+ for(const overrides of [{paymentSource:'other'},{paymentDate:''},{paymentDate:'2025-02-30'},{amount:'0'},{amount:'-1'},{unit:'inexistente'},{category:'inexistente'},{account:'pay'},{externalOrigin:'x'.repeat(501)}]){
   assert.throws(()=>external(s,overrides));assert.deepEqual(s,snapshot);
  }
  const optional=external(s,{externalOrigin:''});assert.equal(optional.externalPayments[0].origin,'');
+});
+
+test('conta externa aceita dezembro futuro e fica vinculada ao mês informado sem alterar caixa',()=>{
+ const future=`${Number(today().slice(0,4))+1}-12-10`,futureMonth=future.slice(0,7),before=fixture();
+ let s=external(before,{date:future,paymentDate:future});const b=s.bills[0];
+ assert.equal(b.date,future);assert.equal(s.externalPayments[0].date,future);assert.equal(billStatus(s,b),'Paga (externamente)');
+ assert.deepEqual(balances(s),balances(before));assert.deepEqual(s.accounts,before.accounts);assert.deepEqual(s.movements,[]);
+ assert.equal(summary(s,futureMonth).total,12345);assert.equal(summary(s,futureMonth).paid,12345);assert.equal(summary(s,futureMonth).pending,0);assert.equal(summary(s,today().slice(0,7)).paid,0);
+ assert.equal(selectBills(s,{month:futureMonth}).length,1);assert.equal(selectPaid(s,{month:futureMonth}).length,1);
+ const report=createReport(s,1,{month:futureMonth});assert.equal(report.sections[0].rows.length,1);assert.equal(report.sections[0].total,'TOTAL: '+money(12345));
+ assert.throws(()=>act(s,'paybill',{id:b.id,amount:'1',date:future,account:'pay'}),/saldo pendente/);
+ s=act(s,'cancel',{table:'externalPayments',id:s.externalPayments[0].id,reason:'Corrigir lançamento futuro'});
+ assert.deepEqual(balances(s),balances(before));assert.equal(summary(s,futureMonth).paid,0);assert.equal(summary(s,futureMonth).pending,12345);
+});
+
+test('parcelas externas de uma conta existente aceitam data futura sem gerar saída bancária',()=>{
+ const future=`${Number(today().slice(0,4))+1}-12-10`,before=fixture();
+ let s=act(before,'bill',{...input,date:future});const b=s.bills[0];
+ s=act(s,'paybill',{id:b.id,paymentSource:'external',amount:'23,45',date:future});
+ assert.equal(billStatus(s,b),'Parcialmente paga (externamente)');assert.equal(billPaid(s,b),2345);assert.deepEqual(balances(s),balances(before));
+ s=act(s,'paybill',{id:b.id,paymentSource:'external',amount:'100',date:future});
+ assert.equal(billStatus(s,b),'Paga (externamente)');assert.equal(billPaid(s,b),12345);assert.equal(summary(s,future.slice(0,7)).total,12345);assert.equal(summary(s,future.slice(0,7)).paid,12345);
+ assert.deepEqual(s.movements,[]);assert.deepEqual(balances(s),balances(before));
 });
 
 test('parcial externo e interno compartilham o limite; só a parcela interna reduz o caixa',()=>{

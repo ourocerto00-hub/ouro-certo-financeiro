@@ -7,6 +7,8 @@ Em **Contas a Pagar → Nova conta**, escolha:
 
 Para quitação parcial, crie a obrigação e use **Pagar**. Cada parcela pode ter origem interna ou externa. A soma das parcelas não pode ultrapassar o valor da conta. A situação distingue pagamentos externos e mistos; somente as parcelas internas debitam o caixa.
 
+Datas futuras são permitidas no lançamento externo, tanto na criação da conta quanto no registro de parcelas, para todos os acessos ativos do sistema (Administrador e Financeiro, inclusive os acessos usados por gerentes e outros usuários). O vencimento define o mês do custo e a data informada no pagamento define o mês de Contas Pagas; por exemplo, informe dezembro nos dois campos para vincular ambos a dezembro. Nenhum lançamento externo debita saldo bancário, independentemente da data.
+
 Pagamentos externos ficam em `state.externalPayments`, com valor positivo em centavos, vínculo à conta a pagar, data, origem, descrição, unidade, categoria, comprovante, responsável e data de criação. Não criam conta bancária nem registro em `state.movements`. Estados antigos sem essa coleção continuam válidos. A coleção é adicionada apenas quando necessária, dentro da revisão financeira já usada pelo aplicativo; não há migração de banco nem regravação de registros anteriores.
 
 O custo mensal considera a conta a pagar uma vez, pela data de vencimento, conforme a regra existente. Contas Pagas e o KPI de pagamentos consideram a data de cada pagamento. Contas Pagas e seu PDF compartilham os filtros por período, unidade, categoria, origem e busca. Custos por unidade, resumo e Fecha Real aproveitam a mesma conta original; pagamentos não acrescentam um segundo custo. Fechamentos oficiais históricos mantêm seus valores salvos.
