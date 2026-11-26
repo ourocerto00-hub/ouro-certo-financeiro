@@ -44,6 +44,9 @@ try{
  let r=await call('/api/auth/bootstrap',{email,password,name:'Financeiro de teste',secret});assert.equal(r.status,200);
  // Exercise the financial role as well as the existing administrator access.
  r=await call('/api/auth/users',{email:'financeiro@example.invalid',password,role:'financeiro',name:'Financeiro teste'});assert.equal(r.status,200);
+ for(const [email,name] of [['gerente@example.invalid','Gerente teste'],['usuario@example.invalid','Usuário teste']]){
+  r=await call('/api/auth/users',{email,password,role:'financeiro',name});assert.equal(r.status,200);
+ }
  r=await call('/api/state');state=r.data.state;revision=r.data.revision;
  const day=today(),month=day.slice(0,7);
  await op('account',{id:'pay',name:'Caixa de teste',purpose:'pay',opening:'10000',date:month+'-01'});
@@ -73,5 +76,24 @@ try{
  r=await call('/api/state?audit');assert.equal(r.data.events[0].operation,'cancel');assert.equal(r.data.events[0].justification,cancellation.input.reason);
  r=await call('/api/state?revision='+revision);assert.ok(!r.data.before.externalPayments[0].cancelled);assert.equal(r.data.after.externalPayments[0].cancelled,true);
  await op('cancel',{table:'bills',id:externalId,reason:'Obrigação duplicada no teste'});assert.equal(summary(state,month).total,100000);assert.equal(summary(state,month).pending,0);assert.equal(balance(state,'pay'),940000);
- console.log('Integração de contas aprovada: autenticação, perfil financeiro, gravação isolada, idempotência, revisão obsoleta, quitação externa, parcelas mistas, débito único, auditoria, cancelamento e persistência após reinício.');
+ const futureDate=`${Number(day.slice(0,4))+1}-12-10`,futureMonth=futureDate.slice(0,7);
+ const logins=[{email,role:'admin'},...['financeiro','gerente','usuario'].map(name=>({email:name+'@example.invalid',role:'financeiro'}))];
+ for(const [index,login] of logins.entries()){
+  await call('/api/auth/logout',{});cookie='';r=await call('/api/auth/login',{email:login.email,password});assert.equal(r.status,200);
+  r=await call('/api/state');assert.equal(r.status,200);assert.equal(r.data.role,login.role);state=r.data.state;revision=r.data.revision;
+  const previousAccounts=structuredClone(state.accounts),previousMovements=structuredClone(state.movements),previousBalances=state.accounts.map(a=>balance(state,a.id));
+  const futureInput={...input,name:'Conta de dezembro '+login.email,amount:'10',date:futureDate,paymentSource:'external',paymentDate:futureDate};
+  const futureBody=await op('bill',futureInput),futureBill=state.bills.at(-1),futurePayment=state.externalPayments.at(-1);
+  assert.equal(futureBill.date,futureDate);assert.equal(futurePayment.date,futureDate);assert.equal(futurePayment.actor,login.email);assert.equal(billStatus(state,futureBill),'Paga (externamente)');
+  r=await call('/api/state',futureBody);assert.equal(r.status,200);assert.equal(r.data.revision,revision);assert.equal(r.data.state.externalPayments.length,state.externalPayments.length);
+  await rejected('paybill',{id:futureBill.id,amount:'1',date:futureDate,account:'pay'},/saldo pendente/);
+  await op('bill',{...input,name:'Parcelas de dezembro '+login.email,amount:'10',date:futureDate});const futurePending=state.bills.at(-1).id;
+  await op('paybill',{id:futurePending,paymentSource:'external',amount:'4',date:futureDate});assert.equal(billStatus(state,state.bills.at(-1)),'Parcialmente paga (externamente)');
+  await op('paybill',{id:futurePending,paymentSource:'external',amount:'6',date:futureDate});assert.equal(billStatus(state,state.bills.at(-1)),'Paga (externamente)');
+  assert.deepEqual(state.accounts,previousAccounts);assert.deepEqual(state.movements,previousMovements);assert.deepEqual(state.accounts.map(a=>balance(state,a.id)),previousBalances);
+  assert.equal(summary(state,futureMonth).total,(index+1)*2000);assert.equal(summary(state,futureMonth).paid,(index+1)*2000);assert.equal(summary(state,futureMonth).pending,0);assert.equal(selectPaid(state,{month:futureMonth}).length,(index+1)*3);
+ }
+ const futurePersisted=structuredClone(state),futureRevision=revision;
+ await stop();await start();r=await call('/api/state');assert.equal(r.status,200);assert.deepEqual(r.data.state,futurePersisted);assert.equal(r.data.revision,futureRevision);
+ console.log('Integração de contas aprovada: admin e acessos financeiros, gerente e usuário; datas futuras em novas contas e parcelas sem débito, competência de dezembro, idempotência, débito interno único, auditoria, cancelamento e persistência após reinício.');
 }finally{await stop();}
