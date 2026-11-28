@@ -7,7 +7,7 @@ function fixture(){
  const s=initial();s.accounts.forEach(a=>{a.date='2026-10-01';a.opening=100000;});
  return act(s,'movement',{date:'2026-10-10',account:'pay',direction:'out',amount:'100',description:'Anúncio antigo',unit:'u0',category:'c3',attachment:{key:'original.pdf'}});
 }
-const input=s=>({id:s.movements[0].id,date:'2026-11-12',description:'Anúncio corrigido',unit:'u1',category:'c4',amount:'150,25',notes:'Correção conferida',reason:'Correção do lançamento'});
+const input=s=>({id:s.movements[0].id,date:'2026-11-12',referenceMonth:'2026-11',description:'Anúncio corrigido',unit:'u1',category:'c4',amount:'150,25',notes:'Correção conferida',reason:'Correção do lançamento'});
 test('edição mantém uma única despesa paga e recalcula caixa, períodos, unidades e PDFs',()=>{
  const before=fixture(),old=before.movements[0],s=act(before,'editExpense',{...input(before),account:'gold',kind:'income',cancelled:true,bill:'fake',actor:'fake'}),m=s.movements[0];
  assert.equal(s.movements.length,1);assert.equal(paidMovements(s).length,1);
@@ -22,7 +22,7 @@ test('edição mantém uma única despesa paga e recalcula caixa, períodos, uni
 });
 test('valida campos e não altera o estado quando rejeita a edição',()=>{
  const s=fixture(),snapshot=structuredClone(s);
- for(const patch of [{id:'ausente'},{date:'2026-02-30'},{date:'2026-09-30'},{amount:'0'},{amount:'-10'},{amount:'1,234'},{description:''},{unit:'ausente'},{category:'ausente'},{reason:''},{notes:'a'.repeat(501)}])assert.throws(()=>act(s,'editExpense',{...input(s),...patch}));
+ for(const patch of [{id:'ausente'},{date:'2026-02-30'},{date:'2026-09-30'},{referenceMonth:'2026-13'},{amount:'0'},{amount:'-10'},{amount:'1,234'},{description:''},{unit:'ausente'},{category:'ausente'},{reason:''},{notes:'a'.repeat(501)}])assert.throws(()=>act(s,'editExpense',{...input(s),...patch}));
  s.units[1].active=false;assert.throws(()=>act(s,'editExpense',input(s)),/inativa/);s.units[1].active=true;
  s.categories[4].active=false;assert.throws(()=>act(s,'editExpense',input(s)),/inativa/);s.categories[4].active=true;
  assert.deepEqual(s,snapshot);

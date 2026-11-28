@@ -45,7 +45,7 @@ export default function ManagementPanel({state,month,role,mutate,busy,isDemo}){
    {metric('Custo logístico por grama',view.logistics===null?'Não calculável':money(view.logistics)+' / g','Contas / gramas da mesma competência.')}
    {metric('Lucro líquido',view.net===null?'Não informado':signedMoney(view.net),view.net===null?'Informe o lucro bruto.':view.net>0?'Resultado positivo':view.net<0?'Resultado negativo':'Equilíbrio',view.net>0?'result-positive':view.net<0?'result-negative':'')}
   </div>
-  <p>Pagamentos realizados por data na competência: <b>{money(view.source.paid)}</b> (consulta separada; não são deduzidos outra vez). Folhas não conferidas: <b>{view.source.unconfirmedPayroll}</b>.</p>
+  <p>Pagamentos e vales do mês de referência: <b>{money(view.source.paid)}</b> (já incluídos nos custos; não são deduzidos outra vez). Folhas não conferidas: <b>{view.source.unconfirmedPayroll}</b>.</p>
   {r?.status==='closed'&&r.source.total!==view.source.total&&<p className="result-negative" role="status">As obrigações do sistema mudaram após o fechamento ({money(view.source.total)} atualmente). O resultado oficial foi preservado; revise e reabra se necessário.</p>}
   <div className="toolbar"><div>
    {r?.status!=='closed'&&<button type="button" className="primary" disabled={busy} onClick={()=>open('partial')}>Atualizar parcial do mês</button>}

@@ -92,12 +92,13 @@ test('cancelamento externo preserva auditoria, reabre obrigação e nunca estorn
  assert.equal(summary(s,month).total,0);assert.equal(summary(s,month).pending,0);assert.equal(billStatus(s,s.bills[0]),'Cancelada');assert.deepEqual(s.movements,[]);
 });
 
-test('pagamento externo respeita competência do custo e data do pagamento nos KPIs e relatórios',()=>{
+test('pagamento externo abate a referência do custo e preserva a data real no registro',()=>{
  const s=external(fixture(),{date:'2025-09-30'}),b=s.bills[0];
- assert.equal(summary(s,'2025-09').total,12345);assert.equal(summary(s,'2025-09').pending,0);assert.equal(summary(s,'2025-09').paid,0);
- assert.equal(summary(s,month).total,0);assert.equal(summary(s,month).paid,12345);assert.equal(billPaid(s,b),12345);
- assert.equal(managementView(s,'2025-09').cost,12345);assert.equal(managementView(s,month).source.paid,12345);
- assert.equal(selectBills(s,{month:'2025-09'}).length,1);assert.equal(selectPaid(s,{month}).length,1);
+ assert.equal(summary(s,'2025-09').total,12345);assert.equal(summary(s,'2025-09').pending,0);assert.equal(summary(s,'2025-09').paid,12345);
+ assert.equal(summary(s,month).total,0);assert.equal(summary(s,month).paid,0);assert.equal(billPaid(s,b),12345);
+ assert.equal(managementView(s,'2025-09').cost,12345);assert.equal(managementView(s,'2025-09').source.paid,12345);
+ assert.equal(selectBills(s,{month:'2025-09'}).length,1);assert.equal(selectPaid(s,{month:'2025-09'}).length,1);assert.equal(selectPaid(s,{month}).length,0);
+ assert.equal(selectPaid(s,{month:'2025-09'})[0].date,date);
 });
 
 test('filtros, Contas Pagas, custos por filial, resumo e PDFs contam a despesa uma única vez',()=>{

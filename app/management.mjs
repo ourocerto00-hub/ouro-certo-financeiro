@@ -23,7 +23,7 @@ export function logisticsCents(cost,mg){
  check(Number.isSafeInteger(rate),'Custo por grama fora do limite de precisão. Revise os valores.');return rate;
 }
 export function managementSource(s,month){
- return {...summary(s,month,'all'),pendingGrams:s.payroll.filter(p=>p.month===month&&!commissionReady(p)).length,unconfirmedPayroll:s.payroll.filter(p=>p.month===month&&!p.confirmed).length};
+ return {...summary(s,month,'all'),calculationBasis:'reference-month-v1',pendingGrams:s.payroll.filter(p=>p.month===month&&!commissionReady(p)).length,unconfirmedPayroll:s.payroll.filter(p=>p.month===month&&!p.confirmed).length};
 }
 export function managementView(s,month){
  monthEnd(month);
@@ -139,7 +139,7 @@ export function monthlyReport(s,month,version,issuedAt=new Date()){
     ['Ouro comprado no mês',gramsLabel(mg)],['Custo logístico por grama',rate===null?'Não calculável - nenhuma grama comprada':money(rate)+' / g'],
     ['Fórmula logística','Contas exatas do mês / gramas compradas no mesmo mês'],['Lucro líquido',`${signedMoney(gross-cost)} (${gross-cost>0?'positivo':gross-cost<0?'negativo':'equilíbrio'})`],
     ['Fórmula do resultado','Lucro bruto faturado - contas exatas da competência'],
-    ['Obrigações do sistema no fechamento',money(snapshot.source.total)],['Pagamentos por data no mês (informativo)',money(snapshot.source.paid)],
+    ['Obrigações do sistema no fechamento',money(snapshot.source.total)],[snapshot.source.calculationBasis==='reference-month-v1'?'Pagamentos da referência (informativo)':'Pagamentos por data no mês (regra anterior)',money(snapshot.source.paid)],
     ['Folhas não conferidas / gramas pendentes',`${snapshot.source.unconfirmedPayroll} / ${snapshot.source.pendingGrams}`],['Ajuste do custo informado',snapshot.adjustment||'Sem ajuste'],['Justificativa',snapshot.reason]
    ]},
    {title:'Auditoria da competência',columns:['Data / estado','Responsável / ação','Justificativa'],widths:[1.2,1.4,1.6],rows:r.history.map(e=>[`${stamp(e.at)} / ${{draft:'Parcial',closed:'Fechado',reopened:'Reaberto'}[e.status]}`,`${e.actor} / ${{managementPartial:'Atualização parcial',managementClose:'Fechamento oficial',managementReopen:'Reabertura',managementEditPartial:'Edição do parcial',managementDeletePartial:'Exclusão do parcial'}[e.operation]}`,e.reason])}
@@ -164,7 +164,7 @@ export function partialMonthlyReport(s,month,user,issuedAt=new Date()){
   sections:[{title:'Resultado parcial salvo',columns:['Indicador','Valor / critério'],widths:[1.3,2],rows:[
    ['Estado do documento','PARCIAL - NÃO OFICIAL'],['Gramas informadas',gramsLabel(grams)],['Custo por grama',rate===null?'Não calculável - nenhuma grama informada':money(rate)+' / g'],
    ['Fórmula logística','Contas da competência / gramas informadas para a mesma competência'],['Lucro líquido parcial',signedMoney(net)],['Fórmula do resultado','Lucro bruto externo - contas da competência'],
-   ['Pagamentos por data (informativo)',money(source.paid)],['Folhas não conferidas / gramas pendentes',`${source.unconfirmedPayroll} / ${source.pendingGrams}`],['Fechamento oficial da competência',r.status==='closed'?`Existe versão oficial ${r.version}; este documento continua parcial.`:r.status==='reopened'?'Reaberto para revisão':'Ainda não confirmado']
+   ['Pagamentos da referência (informativo)',money(source.paid)],['Folhas não conferidas / gramas pendentes',`${source.unconfirmedPayroll} / ${source.pendingGrams}`],['Fechamento oficial da competência',r.status==='closed'?`Existe versão oficial ${r.version}; este documento continua parcial.`:r.status==='reopened'?'Reaberto para revisão':'Ainda não confirmado']
   ]}]
  };
 }
