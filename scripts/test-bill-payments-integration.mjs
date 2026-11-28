@@ -95,5 +95,24 @@ try{
  }
  const futurePersisted=structuredClone(state),futureRevision=revision;
  await stop();await start();r=await call('/api/state');assert.equal(r.status,200);assert.deepEqual(r.data.state,futurePersisted);assert.equal(r.data.revision,futureRevision);
+ // Cross-month reference survives HTTP, SQLite restart and duplicate requests.
+ const nextDate=new Date(day+'T12:00:00Z');nextDate.setUTCMonth(nextDate.getUTCMonth()+1,1);const referenceMonth=nextDate.toISOString().slice(0,7);
+ const previous=summary(state,referenceMonth),cashBefore=balance(state,'pay'),startedAt=Date.now();
+ const referenceBody=await op('movement',{date:day,referenceMonth,account:'pay',direction:'out',amount:'12.34',unit:'u1',category:'c3',description:'Pix para o próximo mês',createdAt:'1900-01-01T00:00:00Z'});
+ const referenceMovement=state.movements.at(-1),savedCreatedAt=referenceMovement.createdAt;
+ assert.equal(referenceMovement.date,day);assert.equal(referenceMovement.referenceMonth,referenceMonth);assert.ok(Date.parse(savedCreatedAt)>=startedAt);assert.ok(Date.parse(savedCreatedAt)<=Date.now());
+ assert.equal(balance(state,'pay'),cashBefore-1234);assert.equal(summary(state,referenceMonth).total,previous.total+1234);assert.equal(summary(state,referenceMonth).paid,previous.paid+1234);
+ r=await call('/api/state',referenceBody);assert.equal(r.status,200);assert.equal(r.data.revision,revision);assert.equal(r.data.state.movements.at(-1).createdAt,savedCreatedAt);
+ await op('bill',{...input,referenceMonth,name:'Conta do próximo mês',amount:'20',paymentSource:'external',paymentDate:day,createdAt:'1900-01-01'});
+ assert.equal(state.bills.at(-1).referenceMonth,referenceMonth);assert.notEqual(state.bills.at(-1).createdAt,'1900-01-01');assert.equal(balance(state,'pay'),cashBefore-1234);
+ await op('employee',{name:'Pessoa de teste',role:'Teste',salary:'100',compensationType:'fixed',unit:'u1',admission:month+'-01',month:referenceMonth});
+ await op('advance',{employee:state.employees.at(-1).id,month:referenceMonth,date:day,account:'pay',amount:'10',description:'Vale antecipado',createdAt:'1900-01-01'});
+ const totals=summary(state,referenceMonth);assert.equal(totals.total,previous.total+13234);assert.equal(totals.paid,previous.paid+4234);assert.equal(totals.pending,totals.total-totals.paid);assert.equal(totals.advances,previous.advances+1000);
+ assert.notEqual(state.advances.at(-1).createdAt,'1900-01-01');assert.equal(state.advances.at(-1).createdAt,state.movements.at(-1).createdAt);
+ assert.ok(selectPaid(state,{month:referenceMonth}).some(p=>p.id===referenceMovement.id&&p.date===day));
+ await rejected('movement',{...referenceBody.input,referenceMonth:'2026-13'},/Mês inválido/);
+ const referencePersisted=structuredClone(state),referenceRevision=revision;
+ await stop();await start();r=await call('/api/state');assert.equal(r.status,200);assert.equal(r.data.revision,referenceRevision);assert.deepEqual(r.data.state,referencePersisted);
  console.log('Integração de contas aprovada: admin e acessos financeiros, gerente e usuário; datas futuras em novas contas e parcelas sem débito, competência de dezembro, idempotência, débito interno único, auditoria, cancelamento e persistência após reinício.');
+ console.log('Referência mensal aprovada via HTTP e SQLite: Pix e vale antecipados, conta externa, horário automático inviolável, mensal menos pago, repetição segura e persistência após reinício.');
 }finally{await stop();}

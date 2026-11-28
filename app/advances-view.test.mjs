@@ -9,14 +9,15 @@ const fixture=()=>{
  s.advances=[{id:'a',employee:'e',unit:'u0',month:'2026-12',date:'2026-11-22',amount:10000,description:'Vale de dezembro'},
  {id:'b',employee:'e',unit:'u1',month:'2026-11',date:'2026-12-02',amount:20000,description:'Vale de novembro'},
  {id:'c',employee:'e',unit:'u0',month:'2027-01',date:'2026-12-20',amount:30000,description:'Vale de janeiro'},
- {id:'d',employee:'e',unit:'u0',month:'2026-12',date:'2026-11-25',amount:40000,cancelled:true}];return s;
+ {id:'d',employee:'e',unit:'u0',month:'2026-12',date:'2026-11-25',amount:40000,cancelled:true}];s.movements=s.advances.map(a=>({id:'m-'+a.id,advance:a.id,kind:'advance',date:a.date,unit:a.unit,amount:-a.amount,cancelled:a.cancelled}));return s;
 };
 test('seleção usa competência, não data do pagamento; cancelados não compõem total',()=>{
  const s=fixture(),rows=selectAdvances(s,{month:'2026-12'});
  assert.deepEqual(rows.map(a=>a.id),['a','d']);assert.equal(advancesTotal(rows),10000);
  assert.deepEqual(selectAdvances(s,{month:'2026-11'}).map(a=>a.id),['b']);
  assert.deepEqual(selectAdvances(s,{month:'2027-01'}).map(a=>a.id),['c']);
- assert.equal(summary(s,'2026-11').advances,10000); // cash summary stays by payment date
+ assert.equal(summary(s,'2026-11').advances,20000);
+ assert.equal(summary(s,'2026-12').advances,10000); // dashboard follows salary reference; cash still follows real payment date
 });
 test('regra funciona em todos os meses e na virada de ano, com unidade e busca',()=>{
  const s=fixture();for(let month=1;month<=12;month++){

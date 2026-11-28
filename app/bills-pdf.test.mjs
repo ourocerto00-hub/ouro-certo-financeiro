@@ -56,8 +56,8 @@ test('seleção compartilhada respeita mês, período inclusivo, unidade, catego
 test('PDF inclui descrição, vencimento, categoria, valor, situação e totais corretos',()=>{
  const s=fixture(),filters={month:'2026-10',unit:'u1',issuedAt:new Date('2026-10-15T12:00:00Z')};
  const report=createReport(s,0,filters),rows=report.sections[0].rows;
- assert.deepEqual(report.sections[0].columns,['Vencimento','Descrição / unidade','Categoria','Valor','Pago / saldo','Situação']);
- assert.deepEqual(rows[0],['01/10/2026','Aluguel pago / Locação comercial / Sorriso','Aluguel','R$\u00a01.000,00','R$\u00a01.000,00 / R$\u00a00,00','Paga']);
+ assert.deepEqual(report.sections[0].columns,['Referência / vencimento','Descrição / unidade / lançamento','Categoria','Valor','Pago / saldo','Situação']);
+ assert.deepEqual(rows[0],['2026-10 / 01/10/2026','Aluguel pago / Locação comercial / Sorriso / Lançamento: Não registrado (legado)','Aluguel','R$\u00a01.000,00','R$\u00a01.000,00 / R$\u00a00,00','Paga']);
  assert.equal(rows[1][5],'Parcialmente paga');assert.equal(rows[2][5],'Pendente');assert.equal(rows[3][5],'Cancelada');
  assert.deepEqual(billTotals(s,selectBills(s,filters)),{amount:220000,paid:120000,pending:100000,cancelled:30000});
  assert.deepEqual(report.stats.map(x=>x.value),['R$\u00a02.200,00','R$\u00a01.200,00','R$\u00a01.000,00','R$\u00a0300,00']);

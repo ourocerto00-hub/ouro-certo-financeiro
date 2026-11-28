@@ -12,6 +12,16 @@ export function initial(email=''){
  return {units:['Matriz','Sorriso','Nova Mutum','Campo Novo dos Parecis','Tangará da Serra','Vilhena','Cacoal'].map((name,i)=>({id:'u'+i,name,city:i?name:'Sede',state:i>4?'RO':'MT',type:i?'Filial':'Matriz',active:true})),categories:['Aluguel','Energia','Internet','Marketing','Combustível','Manutenção','Despesas administrativas','Salários'].map((name,i)=>({id:'c'+i,name,active:true})),accounts:[{id:'gold',name:'Nubank — Ouro Certo',purpose:'gold',opening:0,date:today()},{id:'pay',name:'Nubank — Ouro Passo',purpose:'pay',opening:0,date:today()}],employees:[],bills:[],movements:[],advances:[],payroll:[],closings:[],rates:[{month:'2000-01',value:1000}],users:email?[{id:id(),name:email,email,active:true}]:[]};
 }
 export const active=x=>!x.cancelled;
+// Legacy records keep the month already represented by their stored date.
+// Reading never invents a real payment date or writes a migration.
+export const referenceMonth=x=>x.referenceMonth||x.month||x.date?.slice(0,7)||'';
+export function paymentReference(s,p){
+ const bill=p.bill&&s.bills.find(b=>b.id===p.bill);
+ const advance=p.advance&&s.advances.find(a=>a.id===p.advance);
+ const payroll=(p.payroll&&s.payroll.find(x=>x.id===p.payroll))||(advance&&s.payroll.find(x=>x.employee===advance.employee&&x.month===advance.month));
+ const obligation=bill||payroll||advance||p;
+ return {referenceMonth:referenceMonth(obligation),unit:obligation.unit??p.unit};
+}
 // Internal payments remain in the cash ledger. External settlements never enter it.
 export const paidMovements=s=>s.movements.filter(m=>active(m)&&m.amount<0&&['expense','bill','advance','salary'].includes(m.kind));
 export const externalPayments=s=>s.externalPayments||[];
@@ -20,7 +30,7 @@ export const billExternalPaid=(s,b)=>externalPayments(s).filter(p=>p.bill===b.id
 export function paidRecords(s,{includeCancelled=false}={}){
  const internal=s.movements.filter(m=>m.amount<0&&['expense','bill','advance','salary'].includes(m.kind)).map(m=>({...m,value:-m.amount,source:'internal',table:'movements'}));
  const external=externalPayments(s).map(p=>({...p,value:p.amount,kind:'bill',source:'external',table:'externalPayments'}));
- return [...internal,...external].filter(p=>includeCancelled||active(p)).sort((a,b)=>a.date.localeCompare(b.date)||String(a.id||'').localeCompare(String(b.id||'')));
+ return [...internal,...external].filter(p=>includeCancelled||active(p)).map(p=>({...p,...paymentReference(s,p)})).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.id||'').localeCompare(String(b.id||'')));
 }
 export function cashSummary(s,account,from,to=from){
  if(from>to)throw Error('Período inválido.');
@@ -55,39 +65,45 @@ export function payrollNeedsSync(s,month){
 }
 export function summary(s,month,unit='all'){
  const filter=x=>unit==='all'||x.unit===unit;
- const bs=s.bills.filter(x=>active(x)&&x.date.startsWith(month)&&filter(x));
+ const bs=s.bills.filter(x=>active(x)&&referenceMonth(x)===month&&filter(x));
  const ps=s.payroll.filter(x=>x.month===month&&filter(x));
- const daily=s.movements.filter(x=>active(x)&&x.kind==='expense'&&x.date.startsWith(month)&&filter(x));
+ const daily=s.movements.filter(x=>active(x)&&x.kind==='expense'&&referenceMonth(x)===month&&filter(x));
  const total=bs.reduce((n,b)=>n+b.amount,0)+ps.reduce((n,p)=>n+remuneration(p),0)+daily.reduce((n,m)=>n-m.amount,0);
- const pending=bs.reduce((n,b)=>n+Math.max(0,b.amount-billPaid(s,b)),0)+ps.reduce((n,p)=>n+salaryDue(s,p),0);
- const paid=paidRecords(s).filter(x=>x.date.startsWith(month)&&filter(x)).reduce((n,p)=>n+p.value,0);
- const advances=s.advances.filter(x=>active(x)&&x.date.startsWith(month)&&filter(x)).reduce((n,x)=>n+x.amount,0);
+ const payments=paidRecords(s).filter(x=>referenceMonth(x)===month&&filter(x));
+ const paid=payments.reduce((n,p)=>n+p.value,0);
+ // One reference month for all dashboard cards. Preserve a negative difference
+ // when advances exceed known remuneration; do not hide it behind a zero floor.
+ const pending=total-paid;
+ const advances=payments.filter(p=>p.kind==='advance').reduce((n,p)=>n+p.value,0);
  return {total,pending,paid,advances,gold:s.accounts.filter(x=>x.purpose==='gold').reduce((n,a)=>n+balance(s,a.id),0),pay:s.accounts.filter(x=>x.purpose==='pay').reduce((n,a)=>n+balance(s,a.id),0)};
 }
 function ensurePeriod(s,month){period(month);for(const e of s.employees.filter(x=>x.active&&x.admission.slice(0,7)<=month)){if(!s.payroll.some(p=>p.employee===e.id&&p.month===month)){const rate=[...s.rates].filter(r=>r.month<=month).sort((a,b)=>b.month.localeCompare(a.month))[0]?.value||1000;s.payroll.push({id:id(),employee:e.id,unit:e.unit,month,salary:e.salary,grams:null,rate,compensationType:compensationType(e),confirmed:false,notes:''});}}
  for(const p of s.payroll.filter(p=>p.month===month)){const e=s.employees.find(e=>e.id===p.employee);if(e)syncPayroll(s,p,e);}
- for(const b of [...s.bills].filter(x=>x.recurring&&active(x)&&!x.parent&&x.date.slice(0,7)<month)){
-   const [year,mon]=b.date.slice(0,7).split('-').map(Number);
+ for(const b of [...s.bills].filter(x=>x.recurring&&active(x)&&!x.parent&&referenceMonth(x)<month)){
+   const [year,mon]=referenceMonth(b).split('-').map(Number);
+   const [dueYear,dueMonth]=b.date.slice(0,7).split('-').map(Number);
    let y=year,m=mon+1;
    while(y*12+m<=Number(month.slice(0,4))*12+Number(month.slice(5))){
     if(m>12){m=1;y++;}
     const periodKey=`${y}-${String(m).padStart(2,'0')}`;
     if(periodKey>month)break;
-    if(!s.bills.some(x=>x.parent===b.id&&x.date.startsWith(periodKey))){
-     const d=Math.min(Number(b.date.slice(8)),new Date(y,m,0).getDate());
-     s.bills.push({...b,id:id(),parent:b.id,date:periodKey+'-'+String(d).padStart(2,'0'),recurring:false});
+    if(!s.bills.some(x=>x.parent===b.id&&referenceMonth(x)===periodKey)){
+     const due=new Date(Date.UTC(dueYear,dueMonth-1+(y-year)*12+m-mon,1));
+     const day=Math.min(Number(b.date.slice(8)),new Date(Date.UTC(due.getUTCFullYear(),due.getUTCMonth()+1,0)).getUTCDate());
+     const dueDate=due.toISOString().slice(0,7)+'-'+String(day).padStart(2,'0');
+     s.bills.push({...b,id:id(),parent:b.id,date:dueDate,referenceMonth:periodKey,createdAt:new Date().toISOString(),recurring:false});
     }
     m++;
    }
   }
 }
 export function apply(source,op,input,actor){
- const s=structuredClone(source),v={...input};
+ const s=structuredClone(source),v={...input},createdAt=new Date().toISOString();
  const get=(table,key)=>{const x=s[table].find(x=>x.id===key);must(x,`Registro não encontrado: ${table}.`);return x;};
  const unit=()=>{const x=get('units',v.unit);must(x.active,'Unidade inativa.');return x.id;};
  const account=(key=v.account,purpose)=>{const a=get('accounts',key);if(purpose)must(a.purpose===purpose,'Selecione uma conta com a finalidade correta.');return a;};
  const unlocked=(a,d)=>{must(!s.closings.some(c=>c.account===a&&c.date>=d&&!c.reopened),'Período encerrado. Reabra o fechamento com justificativa antes de alterar.');};
- const move=m=>{date(m.date);const a=account(m.account);must(m.date>=a.date,'A data é anterior ao saldo inicial da conta.');unlocked(m.account,m.date);s.movements.push({id:id(),actor,...m});};
+ const move=m=>{date(m.date);const a=account(m.account);must(m.date>=a.date,'A data é anterior ao saldo inicial da conta.');unlocked(m.account,m.date);s.movements.push({id:id(),actor,createdAt,...m});};
  const category=()=>{const c=get('categories',v.category);must(c.active,'Categoria inativa.');return c.id;};
  const paymentSource=()=>{const source=v.paymentSource??'internal';must(['internal','external'].includes(source),'Selecione uma origem de pagamento válida.');return source;};
  const settleExternally=(b,amount,paymentDate)=>{
@@ -95,7 +111,7 @@ export function apply(source,op,input,actor){
   const d=date(paymentDate);
   const origin=String(v.externalOrigin||'').trim();must(origin.length<=500,'Origem externa deve ter até 500 caracteres.');
   s.externalPayments??=[];
-  s.externalPayments.push({id:id(),bill:b.id,date:d,amount,unit:b.unit,category:b.category,billName:b.name,description:b.description||b.name,origin,actor,createdAt:new Date().toISOString(),attachment:v.attachment||null});
+  s.externalPayments.push({id:id(),bill:b.id,date:d,amount,unit:b.unit,category:b.category,billName:b.name,description:b.description||b.name,origin,actor,createdAt,attachment:v.attachment||null});
  };
  if(['managementPartial','managementAccumulated','managementClose','managementReopen','managementEditPartial','managementDeletePartial','managementEditAccumulated','managementDeleteAccumulated'].includes(op))return applyManagement(s,op,v,actor);
  if(op==='period'){ensurePeriod(s,period(v.month));}
@@ -121,8 +137,9 @@ export function apply(source,op,input,actor){
  }
  else if(op==='bill'){
   const source=paymentSource();must(!v.id||source==='internal','Use o pagamento da conta para registrar uma quitação externa.');
-  const x=v.id?get('bills',v.id):{id:id()};if(v.id){must(!x.cancelled,'Conta cancelada.');must(billPaid(s,x)===0,'Uma conta com pagamentos não pode ser alterada. Cancele os pagamentos antes.');must(v.reason?.trim(),'Justifique a alteração.');}
-  Object.assign(x,{name:text(v.name,'o nome da conta'),description:text(v.description||v.name,'a descrição'),unit:unit(),category:category(),amount:positive(v.amount),date:date(v.date),recurring:!!v.recurring,notes:v.notes||'',attachment:v.attachment||null});if(!v.id)s.bills.push(x);
+  const x=v.id?get('bills',v.id):{id:id(),createdAt};if(v.id){must(!x.cancelled,'Conta cancelada.');must(billPaid(s,x)===0,'Uma conta com pagamentos não pode ser alterada. Cancele os pagamentos antes.');must(v.reason?.trim(),'Justifique a alteração.');}
+  const ref=period(v.referenceMonth??(v.id?referenceMonth(x):date(v.date).slice(0,7)));
+  Object.assign(x,{name:text(v.name,'o nome da conta'),description:text(v.description||v.name,'a descrição'),unit:unit(),category:category(),amount:positive(v.amount),date:date(v.date),referenceMonth:ref,recurring:!!v.recurring,notes:v.notes||'',attachment:v.attachment||null});if(!v.id)s.bills.push(x);
   if(source==='external')settleExternally(x,x.amount,v.paymentDate);
  }
  else if(op==='paybill'){
@@ -132,7 +149,8 @@ export function apply(source,op,input,actor){
  }
  else if(op==='movement'){
   const a=account();const d=date(v.date),amount=positive(v.amount);must(['in','out'].includes(v.direction),'Tipo inválido.');const outgoing=v.direction==='out';
-  move({date:d,account:a.id,amount:outgoing?-amount:amount,description:text(v.description,'a descrição'),kind:outgoing?(a.purpose==='pay'?'expense':'gold'):'income',unit:outgoing&&a.purpose==='pay'?unit():(v.unit||null),category:outgoing&&a.purpose==='pay'?category():null,origin:outgoing?'':text(v.origin,'a origem financeira'),attachment:v.attachment||null});
+  const expense=outgoing&&a.purpose==='pay';
+  move({date:d,...(expense?{referenceMonth:period(v.referenceMonth??d.slice(0,7))}:{}),account:a.id,amount:outgoing?-amount:amount,description:text(v.description,'a descrição'),kind:outgoing?(expense?'expense':'gold'):'income',unit:expense?unit():(v.unit||null),category:expense?category():null,origin:outgoing?'':text(v.origin,'a origem financeira'),attachment:v.attachment||null});
  }
  else if(op==='editExpense'){
   const m=get('movements',v.id);
@@ -145,13 +163,13 @@ export function apply(source,op,input,actor){
   const nextCategory=v.category===m.category?get('categories',m.category).id:category();
   const notes=String(v.notes??m.notes??'').trim();must(notes.length<=500,'Observações devem ter até 500 caracteres.');
   // Corrige a mesma saída: identidade, conta, autoria e vínculos do pagamento são preservados.
-  Object.assign(m,{date:d,description:text(v.description,'a descrição'),unit:nextUnit,category:nextCategory,amount:-positive(v.amount),notes,attachment:v.attachment===undefined?m.attachment:v.attachment,editedBy:actor,editedAt:new Date().toISOString(),editReason:reason});
+  Object.assign(m,{date:d,referenceMonth:period(v.referenceMonth??referenceMonth(m)),description:text(v.description,'a descrição'),unit:nextUnit,category:nextCategory,amount:-positive(v.amount),notes,attachment:v.attachment===undefined?m.attachment:v.attachment,editedBy:actor,editedAt:createdAt,editReason:reason});
  }
  else if(op==='transfer'){
   must(v.account!==v.destination,'Selecione duas contas diferentes.');account(v.destination);const amount=positive(v.amount),transfer=id(),description=text(v.description,'a descrição');move({date:date(v.date),account:v.account,amount:-amount,description,kind:'transfer',transfer});move({date:v.date,account:v.destination,amount,description,kind:'transfer',transfer});
  }
  else if(op==='advance'){
-  const e=get('employees',v.employee);must(e.active,'Funcionário inativo.');const month=period(v.month);ensurePeriod(s,month);const p=s.payroll.find(x=>x.employee===e.id&&x.month===month);must(p,'Não há salário para esse período.');const amount=positive(v.amount);if(salaryPaid(s,p))must(amount<=salaryDue(s,p),'Vale maior que o saldo salarial restante.');account(v.account,'pay');const a={id:id(),employee:e.id,unit:e.unit,date:date(v.date),month,amount,description:text(v.description,'a descrição'),account:v.account,actor,attachment:v.attachment||null};move({account:v.account,amount:-amount,date:a.date,description:a.description,unit:e.unit,employee:e.id,advance:a.id,kind:'advance',attachment:a.attachment});s.advances.push(a);
+  const e=get('employees',v.employee);must(e.active,'Funcionário inativo.');const month=period(v.month);ensurePeriod(s,month);const p=s.payroll.find(x=>x.employee===e.id&&x.month===month);must(p,'Não há salário para esse período.');const amount=positive(v.amount);if(salaryPaid(s,p))must(amount<=salaryDue(s,p),'Vale maior que o saldo salarial restante.');account(v.account,'pay');const a={id:id(),employee:e.id,unit:e.unit,date:date(v.date),month,amount,description:text(v.description,'a descrição'),account:v.account,actor,createdAt,attachment:v.attachment||null};move({account:v.account,amount:-amount,date:a.date,description:a.description,unit:e.unit,employee:e.id,advance:a.id,kind:'advance',attachment:a.attachment});s.advances.push(a);
  }
  else if(op==='grams'){
   const p=get('payroll',v.id);must(earnsCommission(p),'Este funcionário recebe somente salário fixo.');must(!p.confirmed,'Reabra a conferência antes de alterar as gramas.');must(!salaryPaid(s,p),'Cancele os pagamentos salariais antes de recalcular.');const raw=String(v.grams).replace(',','.');must(/^\d+(\.\d{1,3})?$/.test(raw),'Informe gramas com até três casas decimais; confirme 0 se necessário.');if(p.grams!==null)must(v.reason?.trim(),'Justifique a alteração de gramas.');p.grams=Math.round(Number(raw)*1000);must(Number.isSafeInteger(p.grams)&&p.grams<1e9,'Quantidade fora do limite.');p.notes=v.notes||'';
